@@ -23,6 +23,8 @@ import { IViewsService } from '../../../services/views/common/viewsService.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS, REPOSITORY_CONTEXT_VIEW_IDS, isRepositoryContextViewContainerAllowed } from '../common/repositoryContext.js';
 import { IRepositoryCatalogService } from '../common/repositoryCatalog.js';
+import './canonicalConfigurationActions.js';
+import './canonicalConfigurationService.js';
 import './repositoryCatalogActions.js';
 import './repositoryCatalogService.js';
 import { RepositoryContextViewPane } from './repositoryContextView.js';

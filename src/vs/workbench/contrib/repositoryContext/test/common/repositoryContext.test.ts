@@ -6,6 +6,7 @@
 import assert from 'assert';
 import { URI } from '../../../../../base/common/uri.js';
 import { ViewContainerLocation } from '../../../../common/views.js';
+import { createCanonicalConfiguration, parseCanonicalConfiguration, serializeCanonicalConfiguration } from '../../common/canonicalConfiguration.js';
 import { getRepositoryAvailability, RepositoryCatalogModel } from '../../common/repositoryCatalog.js';
 import { REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS, isRepositoryContextViewContainerAllowed } from '../../common/repositoryContext.js';
 
@@ -76,5 +77,77 @@ suite('Repository Catalog', () => {
 		assert.strictEqual(await getRepositoryAvailability(repository, async resource => resource.path === repository.path), 'notRepository');
 		assert.strictEqual(await getRepositoryAvailability(repository, async () => false), 'missing');
 		assert.strictEqual(await getRepositoryAvailability(repository, async () => true), 'ready');
+	});
+});
+
+suite('Canonical Configuration', () => {
+
+	test('serializes deterministic human-readable configuration', () => {
+		const serialized = serializeCanonicalConfiguration({
+			version: 1,
+			scope: 'global',
+			skills: {
+				'zeta-skill': { activation: 'off' },
+				'alpha-skill': { activation: 'on' },
+			},
+			integrations: {},
+		});
+
+		assert.strictEqual(serialized, [
+			'{',
+			'\t"version": 1,',
+			'\t"scope": "global",',
+			'\t"skills": {',
+			'\t\t"alpha-skill": {',
+			'\t\t\t"activation": "on"',
+			'\t\t},',
+			'\t\t"zeta-skill": {',
+			'\t\t\t"activation": "off"',
+			'\t\t}',
+			'\t},',
+			'\t"integrations": {}',
+			'}',
+			'',
+		].join('\n'));
+	});
+
+	test('keeps repository configuration portable', () => {
+		const serialized = serializeCanonicalConfiguration(createCanonicalConfiguration('repository'));
+
+		assert.strictEqual(serialized.includes('/Users/'), false);
+		assert.strictEqual(serialized.includes('secret'), false);
+		assert.strictEqual(serialized.includes('cache'), false);
+		assert.strictEqual(serialized.includes('health'), false);
+		assert.strictEqual(parseCanonicalConfiguration(serialized, 'repository').scope, 'repository');
+	});
+
+	test('rejects non-canonical and sensitive fields', () => {
+		assert.throws(
+			() => parseCanonicalConfiguration(JSON.stringify({
+				...createCanonicalConfiguration('global'),
+				secrets: { token: 'value' },
+			})),
+			/unsupported fields: secrets/
+		);
+		assert.throws(
+			() => parseCanonicalConfiguration(JSON.stringify({
+				...createCanonicalConfiguration('global'),
+				skills: {
+					'unsafe-skill': {
+						activation: 'on',
+						machinePath: '/tmp/unsafe',
+					},
+				},
+			})),
+			/unsupported fields: machinePath/
+		);
+	});
+
+	test('rejects a document written to the wrong scope', () => {
+		const serialized = serializeCanonicalConfiguration(createCanonicalConfiguration('global'));
+		assert.throws(
+			() => parseCanonicalConfiguration(serialized, 'repository'),
+			/Expected repository configuration/
+		);
 	});
 });

@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -97,6 +97,8 @@ async function main() {
 	const userDataPath = join(temporaryRoot, 'profile');
 	const extensionsPath = join(temporaryRoot, 'extensions');
 	const sharedDataPath = join(temporaryRoot, 'shared');
+	const initializedConfigurationPath = join(temporaryRoot, 'configuration-new');
+	const existingConfigurationPath = join(temporaryRoot, 'configuration-existing');
 	const applicationLog = [];
 	let browser;
 	let child;
@@ -108,6 +110,8 @@ async function main() {
 			mkdir(userDataPath),
 			mkdir(extensionsPath),
 			mkdir(sharedDataPath),
+			mkdir(initializedConfigurationPath),
+			mkdir(existingConfigurationPath),
 		]);
 		await mkdir(join(userDataPath, 'User'));
 		await Promise.all([
@@ -147,9 +151,24 @@ async function main() {
 				}, {
 					key: 'cmd+alt+w',
 					command: 'git.deleteWorktree',
+				}, {
+					key: 'cmd+alt+c',
+					command: 'repositoryContext.manageConfigurationRepository',
+					args: {
+						action: 'initialize',
+						uri: pathToFileURL(initializedConfigurationPath).toString(),
+					},
+				}, {
+					key: 'cmd+alt+e',
+					command: 'repositoryContext.manageConfigurationRepository',
+					args: {
+						action: 'select',
+						uri: pathToFileURL(existingConfigurationPath).toString(),
+					},
 				}])
 			),
 		]);
+		runGit(existingConfigurationPath, ['init', '-b', 'main']);
 		runGit(fixturePath, ['init', '-b', 'main']);
 		runGit(fixturePath, ['config', 'user.name', 'Repository Context Smoke']);
 		runGit(fixturePath, ['config', 'user.email', 'smoke@example.invalid']);
@@ -193,9 +212,11 @@ async function main() {
 
 		await waitForCdp(cdpPort, child);
 		browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
-		page = browser.contexts().flatMap(context => context.pages())
-			.find(candidate => candidate.url().includes('/workbench/workbench'));
-		assert.ok(page, 'Workbench page was not exposed through CDP.');
+		await waitFor(() => {
+			page = browser.contexts().flatMap(context => context.pages())
+				.find(candidate => candidate.url().includes('/workbench/workbench'));
+			return Boolean(page);
+		}, 'Workbench page was not exposed through CDP.');
 
 		const consoleErrors = [];
 		page.on('console', message => {
@@ -221,6 +242,55 @@ async function main() {
 		assert.equal(await page.getByRole('tab', { name: 'Integrations' }).count(), 1);
 		assert.equal(await page.getByRole('button', { name: 'Generate Commit Message' }).count(), 0);
 		assert.equal(await page.getByRole('button', { name: /^(Agents|Chat|Accounts|Manage)$/ }).count(), 0);
+
+		await page.keyboard.press('Meta+Alt+C');
+		const initializedConfigurationFile = join(initializedConfigurationPath, 'repository-context.json');
+		await waitFor(
+			() => existsSync(join(initializedConfigurationPath, '.git')) && existsSync(initializedConfigurationFile),
+			'Configuration repository was not initialized.'
+		);
+		const expectedGlobalConfiguration = [
+			'{',
+			'\t"version": 1,',
+			'\t"scope": "global",',
+			'\t"skills": {},',
+			'\t"integrations": {}',
+			'}',
+			'',
+		].join('\n');
+		assert.equal(await readFile(initializedConfigurationFile, 'utf8'), expectedGlobalConfiguration);
+		assert.equal(runGit(initializedConfigurationPath, ['status', '--porcelain']), '?? repository-context.json');
+		assert.notEqual(
+			spawnSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: initializedConfigurationPath }).status,
+			0,
+			'Configuration initialization unexpectedly created a commit.'
+		);
+		assert.equal(runGit(initializedConfigurationPath, ['remote']), '');
+		assert.deepEqual(
+			(await readdir(initializedConfigurationPath)).filter(name => name.includes('repository-context-tmp')),
+			[],
+			'Atomic write temporary files were left behind.'
+		);
+
+		await page.keyboard.press('Meta+Alt+E');
+		const existingConfigurationFile = join(existingConfigurationPath, 'repository-context.json');
+		await waitFor(
+			() => existsSync(existingConfigurationFile),
+			'Existing configuration repository was not adopted.'
+		);
+		assert.equal(await readFile(existingConfigurationFile, 'utf8'), expectedGlobalConfiguration);
+		assert.equal(runGit(existingConfigurationPath, ['status', '--porcelain']), '?? repository-context.json');
+		assert.notEqual(
+			spawnSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: existingConfigurationPath }).status,
+			0,
+			'Selecting a configuration repository unexpectedly created a commit.'
+		);
+		assert.equal(runGit(existingConfigurationPath, ['remote']), '');
+
+		await page.getByRole('button', { name: 'Views and More Actions...' }).click();
+		await page.getByRole('menuitem', { name: 'Manage Configuration Repository...' }).waitFor();
+		await page.keyboard.press('Escape');
+
 		await page.getByRole('treeitem', { name: /^staged\.txt, Index Modified/ }).click();
 		await page.locator('.monaco-diff-editor').waitFor();
 		assert.match(await page.getByRole('main').innerText(), /staged\.txt \(Index\)/);
@@ -276,7 +346,7 @@ async function main() {
 		const unstagedItem = page.getByRole('treeitem', { name: /^unstaged\.txt, Modified/ });
 		await unstagedItem.hover();
 		await unstagedItem.getByRole('button', { name: 'Discard Changes' }).click();
-		const discardDialog = page.getByRole('dialog');
+		const discardDialog = page.getByRole('dialog').filter({ hasText: 'discard changes' });
 		await discardDialog.waitFor();
 		await discardDialog.getByRole('button', { name: 'Discard File' }).click();
 		await unstagedItem.waitFor({ state: 'detached' });
@@ -296,7 +366,7 @@ async function main() {
 		await page.keyboard.type('Smoke commit');
 		const commitButton = page.getByRole('button', { name: 'Commit Changes on "main"' });
 		await commitButton.click();
-		const hookFailureDialog = page.getByRole('dialog');
+		const hookFailureDialog = page.getByRole('dialog').filter({ hasText: 'hook blocked commit' });
 		await hookFailureDialog.waitFor();
 		assert.match(await hookFailureDialog.innerText(), /Git: hook blocked commit/);
 		assert.equal(runGit(fixturePath, ['log', '-1', '--pretty=%s']), 'Initial fixture');
@@ -316,7 +386,7 @@ async function main() {
 		await commitInput.focus();
 		await page.keyboard.type('Amended smoke');
 		await page.keyboard.press('Meta+Alt+A');
-		const amendDialog = page.getByRole('dialog');
+		const amendDialog = page.getByRole('dialog').filter({ hasText: 'Amend the current commit?' });
 		await amendDialog.waitFor();
 		assert.match(await amendDialog.innerText(), /Amend the current commit\?/);
 		assert.match(await amendDialog.innerText(), /Current commit: .* Smoke commit/);
@@ -329,7 +399,7 @@ async function main() {
 		runGit(fixturePath, ['branch', 'delete-me']);
 		await page.keyboard.press('Meta+Alt+D');
 		await page.getByRole('option', { name: /delete-me/ }).click();
-		const branchDeleteDialog = page.getByRole('dialog');
+		const branchDeleteDialog = page.getByRole('dialog').filter({ hasText: 'Delete branch "delete-me"?' });
 		await branchDeleteDialog.waitFor();
 		assert.match(await branchDeleteDialog.innerText(), /Delete branch "delete-me"\?/);
 		assert.match(await branchDeleteDialog.innerText(), /Location: Local/);
@@ -343,7 +413,7 @@ async function main() {
 		runGit(fixturePath, ['commit', '-m', 'Rebase source']);
 		await page.keyboard.press('Meta+Alt+R');
 		await page.getByRole('option', { name: /rebase-target/ }).click();
-		const rebaseDialog = page.getByRole('dialog');
+		const rebaseDialog = page.getByRole('dialog').filter({ hasText: 'Rebase the current branch?' });
 		await rebaseDialog.waitFor();
 		assert.match(await rebaseDialog.innerText(), /Rebase the current branch\?/);
 		assert.match(await rebaseDialog.innerText(), /Commits to replay: 1/);
@@ -353,7 +423,7 @@ async function main() {
 		runGit(fixturePath, ['worktree', 'add', '-b', 'worktree-review', worktreePath, 'main']);
 		await page.keyboard.press('Meta+Alt+W');
 		await page.getByRole('option', { name: /worktree-review/ }).click();
-		const worktreeDeleteDialog = page.getByRole('dialog');
+		const worktreeDeleteDialog = page.getByRole('dialog').filter({ hasText: 'Delete worktree' });
 		await worktreeDeleteDialog.waitFor();
 		assert.match(await worktreeDeleteDialog.innerText(), /Delete worktree/);
 		assert.match(await worktreeDeleteDialog.innerText(), /Branch: worktree-review/);
@@ -371,7 +441,7 @@ async function main() {
 			'Remote state did not refresh after adding origin.'
 		);
 		await page.keyboard.press('Meta+Alt+F');
-		const forcePushDialog = page.getByRole('dialog');
+		const forcePushDialog = page.getByRole('dialog').filter({ hasText: 'Force push this branch?' });
 		await forcePushDialog.waitFor();
 		assert.match(await forcePushDialog.innerText(), /Force push this branch\?/);
 		assert.match(await forcePushDialog.innerText(), /Remote: origin/);
@@ -433,6 +503,8 @@ async function main() {
 
 		await page.getByRole('button', { name: 'Switch Repository' }).click();
 		await page.getByRole('option', { name: /check fixture,/ }).waitFor();
+		await page.getByRole('option', { name: /configuration-new,/ }).waitFor();
+		await page.getByRole('option', { name: /configuration-existing,/ }).waitFor();
 		assert.equal(await page.getByRole('option', { name: /Open Existing Repository/ }).count(), 1);
 		assert.equal(await page.getByRole('option', { name: /Clone Repository/ }).count(), 1);
 		assert.equal(await page.getByRole('option', { name: /Initialize Repository/ }).count(), 1);
@@ -464,7 +536,7 @@ async function main() {
 		assert.equal(shellState.panelIsVisible, false, JSON.stringify(shellState));
 		assert.match(shellState.title, /fixture/);
 		assert.doesNotMatch(shellState.title, /Untitled/);
-		assert.equal(await page.getByRole('dialog').count(), 0);
+		assert.equal(await page.locator('.monaco-dialog-box').count(), 0);
 		assert.equal(consoleErrors.length, 0, consoleErrors.join('\n'));
 		assert.doesNotMatch(applicationLog.join(''), /AgentHostProcessManager: agent host started/);
 
