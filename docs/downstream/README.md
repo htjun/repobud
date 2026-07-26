@@ -9,6 +9,8 @@ downstream.
   that must remain compatible through downstream upgrades.
 - [Canonical configuration](canonical-configuration.md) defines the portable global and
   repository-local Git contracts and their machine-state boundary.
+- [Context-first Skill management](skill-management.md) defines canonical Skill locations,
+  origin, activation precedence, conflicts, and the active-repository view.
 
 Product behavior belongs in dedicated downstream services and contributions. Upstream source should
 remain unchanged unless a narrower composition seam is not viable and the exception is documented

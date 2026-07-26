@@ -11,6 +11,7 @@ import { IConfigurationRegistry, Extensions as ConfigurationExtensions } from '.
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
+import { ViewPane } from '../../../browser/parts/views/viewPane.js';
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import { EditorResourceAccessor, SideBySideEditor } from '../../../common/editor.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
@@ -25,9 +26,12 @@ import { REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS, REPOSITORY_CONTEXT_VIEW_IDS, isR
 import { IRepositoryCatalogService } from '../common/repositoryCatalog.js';
 import './canonicalConfigurationActions.js';
 import './canonicalConfigurationService.js';
+import './contextSkillService.js';
 import './repositoryCatalogActions.js';
 import './repositoryCatalogService.js';
+import './skillActions.js';
 import { RepositoryContextViewPane } from './repositoryContextView.js';
+import { SkillsViewPane } from './skillsView.js';
 
 const configurationRegistry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration);
 configurationRegistry.registerDefaultConfigurations([{
@@ -68,6 +72,7 @@ function registerProductArea(
 	icon: ReturnType<typeof registerIcon>,
 	order: number,
 	welcomeContent: string,
+	ctorDescriptor: SyncDescriptor<ViewPane> = new SyncDescriptor(RepositoryContextViewPane),
 ): void {
 	const viewContainer = viewContainersRegistry.registerViewContainer({
 		id,
@@ -85,7 +90,7 @@ function registerProductArea(
 		containerIcon: icon,
 		canMoveView: false,
 		canToggleVisibility: false,
-		ctorDescriptor: new SyncDescriptor(RepositoryContextViewPane),
+		ctorDescriptor,
 	}], viewContainer);
 
 	viewsRegistry.registerViewWelcomeContent(viewId, {
@@ -111,7 +116,8 @@ registerProductArea(
 	localize2('repositoryContextSkills', 'Skills'),
 	skillsViewIcon,
 	3,
-	localize('repositoryContextSkillsWelcome', 'Skills available to the active repository will appear here.')
+	localize('repositoryContextSkillsWelcome', 'Skills available to the active repository will appear here.'),
+	new SyncDescriptor(SkillsViewPane)
 );
 registerProductArea(
 	REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS.integrations,

@@ -5,12 +5,15 @@
 
 import assert from 'assert';
 import { URI } from '../../../../../base/common/uri.js';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { ViewContainerLocation } from '../../../../common/views.js';
 import { createCanonicalConfiguration, parseCanonicalConfiguration, serializeCanonicalConfiguration } from '../../common/canonicalConfiguration.js';
 import { getRepositoryAvailability, RepositoryCatalogModel } from '../../common/repositoryCatalog.js';
 import { REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS, isRepositoryContextViewContainerAllowed } from '../../common/repositoryContext.js';
+import { ICanonicalSkillDefinition, resolveEffectiveSkills } from '../../common/skillManagement.js';
 
 suite('Repository Context product composition', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('allows only the three product areas in the primary side bar', () => {
 		for (const id of Object.values(REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS)) {
@@ -38,6 +41,7 @@ suite('Repository Context product composition', () => {
 });
 
 suite('Repository Catalog', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('persists repositories without availability state', () => {
 		const first = URI.file('/tmp/first');
@@ -81,6 +85,7 @@ suite('Repository Catalog', () => {
 });
 
 suite('Canonical Configuration', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('serializes deterministic human-readable configuration', () => {
 		const serialized = serializeCanonicalConfiguration({
@@ -149,5 +154,74 @@ suite('Canonical Configuration', () => {
 			() => parseCanonicalConfiguration(serialized, 'repository'),
 			/Expected repository configuration/
 		);
+	});
+});
+
+suite('Skill Management', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	const globalSkill: ICanonicalSkillDefinition = {
+		id: 'review',
+		name: 'Review',
+		description: 'Review repository changes.',
+		origin: 'global',
+		resource: URI.file('/global/skills/review/SKILL.md'),
+	};
+	const repositorySkill: ICanonicalSkillDefinition = {
+		id: 'release',
+		name: 'Release',
+		description: 'Prepare a release.',
+		origin: 'repository',
+		resource: URI.file('/repository/.repository-context/skills/release/SKILL.md'),
+	};
+
+	test('groups effective skills using repository override precedence', () => {
+		const sections = resolveEffectiveSkills(
+			[globalSkill, repositorySkill],
+			{ review: { activation: 'off' } },
+			{ review: { activation: 'on' }, release: { activation: 'off' } }
+		);
+
+		assert.deepStrictEqual(sections.enabled.map(skill => skill.id), ['review']);
+		assert.deepStrictEqual(sections.available.map(skill => skill.id), ['release']);
+		assert.strictEqual(sections.enabled[0].activationSource, 'repository');
+		assert.strictEqual(sections.enabled[0].repositoryOverride, 'on');
+		assert.deepStrictEqual(sections.enabled[0].origins, ['global']);
+		assert.deepStrictEqual(sections.available[0].origins, ['repository']);
+	});
+
+	test('uses global defaults when the repository override is removed', () => {
+		const sections = resolveEffectiveSkills(
+			[globalSkill],
+			{ review: { activation: 'off' } },
+			{}
+		);
+
+		assert.strictEqual(sections.available[0].repositoryOverride, 'inherit');
+		assert.strictEqual(sections.available[0].activationSource, 'global');
+	});
+
+	test('reports conflicting identities instead of shadowing them', () => {
+		const repositoryConflict: ICanonicalSkillDefinition = {
+			...globalSkill,
+			name: 'Repository Review',
+			origin: 'repository',
+			resource: URI.file('/repository/.repository-context/skills/review/SKILL.md'),
+		};
+		const sections = resolveEffectiveSkills([globalSkill, repositoryConflict], {}, {});
+
+		assert.deepStrictEqual(sections.enabled, []);
+		assert.deepStrictEqual(sections.available, []);
+		assert.strictEqual(sections.needsAttention[0].id, 'review');
+		assert.deepStrictEqual(sections.needsAttention[0].origins, ['repository', 'global']);
+		assert.match(sections.needsAttention[0].issue ?? '', /Conflicting canonical definitions/);
+	});
+
+	test('reports activation entries without definitions', () => {
+		const sections = resolveEffectiveSkills([], {}, { missing: { activation: 'on' } });
+
+		assert.strictEqual(sections.needsAttention[0].id, 'missing');
+		assert.deepStrictEqual(sections.needsAttention[0].origins, ['repository']);
+		assert.match(sections.needsAttention[0].issue ?? '', /No canonical definition/);
 	});
 });

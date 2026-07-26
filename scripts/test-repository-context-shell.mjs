@@ -26,6 +26,20 @@ function runGit(cwd, args) {
 	return result.stdout.trim();
 }
 
+async function writeSkillFixture(root, id, name, description) {
+	const directory = join(root, id);
+	await mkdir(directory, { recursive: true });
+	await writeFile(join(directory, 'SKILL.md'), [
+		'---',
+		`name: ${name}`,
+		`description: ${description}`,
+		'---',
+		'',
+		`# ${name}`,
+		'',
+	].join('\n'));
+}
+
 async function waitFor(predicate, message) {
 	const deadline = Date.now() + 10_000;
 	while (Date.now() < deadline) {
@@ -172,7 +186,25 @@ async function main() {
 		runGit(fixturePath, ['init', '-b', 'main']);
 		runGit(fixturePath, ['config', 'user.name', 'Repository Context Smoke']);
 		runGit(fixturePath, ['config', 'user.email', 'smoke@example.invalid']);
+		await mkdir(join(fixturePath, '.repository-context'), { recursive: true });
 		await Promise.all([
+			writeSkillFixture(join(existingConfigurationPath, 'skills'), 'review', 'Review', 'Review repository changes.'),
+			writeSkillFixture(join(existingConfigurationPath, 'skills'), 'conflict', 'Global Conflict', 'Global conflicting definition.'),
+			writeSkillFixture(join(fixturePath, '.repository-context', 'skills'), 'release', 'Release', 'Prepare repository releases.'),
+			writeSkillFixture(join(fixturePath, '.repository-context', 'skills'), 'conflict', 'Repository Conflict', 'Repository conflicting definition.'),
+			writeFile(join(fixturePath, '.repository-context', 'config.json'), [
+				'{',
+				'\t"version": 1,',
+				'\t"scope": "repository",',
+				'\t"skills": {',
+				'\t\t"release": {',
+				'\t\t\t"activation": "off"',
+				'\t\t}',
+				'\t},',
+				'\t"integrations": {}',
+				'}',
+				'',
+			].join('\n')),
 			writeFile(join(fixturePath, 'conflict.txt'), 'base\n'),
 			writeFile(join(fixturePath, 'deleted.txt'), 'base\n'),
 			writeFile(join(fixturePath, 'hunk.txt'), 'base\n'),
@@ -279,7 +311,10 @@ async function main() {
 			'Existing configuration repository was not adopted.'
 		);
 		assert.equal(await readFile(existingConfigurationFile, 'utf8'), expectedGlobalConfiguration);
-		assert.equal(runGit(existingConfigurationPath, ['status', '--porcelain']), '?? repository-context.json');
+		assert.deepEqual(
+			runGit(existingConfigurationPath, ['status', '--porcelain']).split('\n').sort(),
+			['?? repository-context.json', '?? skills/']
+		);
 		assert.notEqual(
 			spawnSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: existingConfigurationPath }).status,
 			0,
@@ -290,6 +325,52 @@ async function main() {
 		await page.getByRole('button', { name: 'Views and More Actions...' }).click();
 		await page.getByRole('menuitem', { name: 'Manage Configuration Repository...' }).waitFor();
 		await page.keyboard.press('Escape');
+
+		await page.getByRole('tab', { name: 'Skills' }).click();
+		await page.getByText('Active repository').waitFor();
+		await page.locator('.repository-context-skills-context-name').getByText('fixture', { exact: true }).waitFor();
+		await page.getByRole('heading', { name: 'Enabled 1' }).waitFor();
+		await page.getByRole('heading', { name: 'Available 1' }).waitFor();
+		await page.getByRole('heading', { name: 'Needs attention 1' }).waitFor();
+
+		const reviewSkill = page.locator('.repository-context-skill-row[data-skill-id="review"]');
+		const releaseSkill = page.locator('.repository-context-skill-row[data-skill-id="release"]');
+		const conflictSkill = page.locator('.repository-context-skill-row[data-skill-id="conflict"]');
+		assert.match(await reviewSkill.innerText(), /Global/i);
+		assert.match(await reviewSkill.innerText(), /Enabled by default/);
+		assert.match(await releaseSkill.innerText(), /Repository/i);
+		assert.match(await releaseSkill.innerText(), /Disabled by repository override/);
+		assert.match(await conflictSkill.innerText(), /Repository/i);
+		assert.match(await conflictSkill.innerText(), /Global/i);
+		assert.match(await conflictSkill.innerText(), /Conflicting canonical definitions/);
+		assert.match(await conflictSkill.innerText(), /Unavailable until the issue is resolved/);
+
+		await reviewSkill.getByRole('button', { name: 'Off' }).click();
+		await waitFor(async () => {
+			const configuration = JSON.parse(await readFile(
+				join(fixturePath, '.repository-context', 'config.json'),
+				'utf8'
+			));
+			return configuration.skills.review?.activation === 'off';
+		}, 'Repository Skill Off override was not persisted.');
+		await reviewSkill.getByRole('button', { name: 'Inherit' }).click();
+		await waitFor(async () => {
+			const configuration = JSON.parse(await readFile(
+				join(fixturePath, '.repository-context', 'config.json'),
+				'utf8'
+			));
+			return configuration.skills.review === undefined;
+		}, 'Repository Skill override was not removed.');
+		assert.doesNotMatch(
+			await readFile(join(fixturePath, '.repository-context', 'config.json'), 'utf8'),
+			new RegExp(temporaryRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+		);
+
+		await page.getByRole('button', { name: 'Views and More Actions...' }).click();
+		await page.getByRole('menuitem', { name: 'Manage Global Skill Library...' }).waitFor();
+		await page.keyboard.press('Escape');
+		await page.getByRole('tab', { name: /^Source Control/ }).click();
+		await page.getByRole('treeitem', { name: /^staged\.txt, Index Modified/ }).waitFor();
 
 		await page.getByRole('treeitem', { name: /^staged\.txt, Index Modified/ }).click();
 		await page.locator('.monaco-diff-editor').waitFor();
