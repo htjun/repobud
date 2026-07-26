@@ -55,24 +55,24 @@ npm run gulp compile
 postinstall. The Gulp `compile` target builds and type-checks the client and built-in extensions,
 including `extensions/git`.
 
-Launch the source build with an isolated profile when validating the baseline:
+Launch the focused downstream product with its dedicated preview profile:
 
 ```bash
-PROFILE_DIR="$(mktemp -d /tmp/repository-context-workbench-profile.XXXXXX)"
-EXTENSIONS_DIR="$(mktemp -d /tmp/repository-context-workbench-extensions.XXXXXX)"
-./scripts/code.sh \
-  --user-data-dir "$PROFILE_DIR" \
-  --extensions-dir "$EXTENSIONS_DIR" \
-  --disable-extensions \
-  --disable-workspace-trust \
-  --skip-welcome \
-  --skip-release-notes \
-  --new-window
+npm run preview
 ```
 
-The initial run downloaded the pinned Electron build and upstream built-in extensions, created the
-Code OSS application bundle, initialized the isolated profile, started the renderer and extension
-host, and activated the built-in Git extension. Upstream emitted inactive-agent and proposed-API
+The preview command runs the pinned prelaunch preparation, opens the Repository Context Workbench
+executable directly, and keeps product state in `~/.repository-context-workbench-preview`. It does
+not inherit an existing Code OSS profile, so upstream Explorer, Chat, or extension state cannot
+reappear through profile restoration. Pass a repository path after `--` to open it immediately:
+
+```bash
+npm run preview -- /path/to/repository
+```
+
+The initial baseline run downloaded the pinned Electron build and upstream built-in extensions,
+created the application bundle, initialized the profile, started the renderer and extension host,
+and activated the built-in Git extension. Upstream emitted inactive-agent and proposed-API
 diagnostics that did not prevent launch; these are baseline observations, not downstream changes.
 
 ## Test command inventory
