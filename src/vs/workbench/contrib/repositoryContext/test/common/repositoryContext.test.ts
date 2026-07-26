@@ -8,6 +8,14 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { ViewContainerLocation } from '../../../../common/views.js';
 import { createCanonicalConfiguration, parseCanonicalConfiguration, serializeCanonicalConfiguration } from '../../common/canonicalConfiguration.js';
+import {
+	ICanonicalMcpDefinitionResource,
+	inspectClaudeMcpProjection,
+	parseCanonicalMcpDefinition,
+	projectClaudeMcpDefinition,
+	resolveEffectiveMcpIntegrations,
+	serializeCanonicalMcpDefinition,
+} from '../../common/mcpIntegration.js';
 import { getRepositoryAvailability, RepositoryCatalogModel } from '../../common/repositoryCatalog.js';
 import { REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS, isRepositoryContextViewContainerAllowed } from '../../common/repositoryContext.js';
 import { ICanonicalSkillDefinition, resolveEffectiveSkills } from '../../common/skillManagement.js';
@@ -155,6 +163,31 @@ suite('Canonical Configuration', () => {
 			/Expected repository configuration/
 		);
 	});
+
+	test('validates portable Integration activation and client selection', () => {
+		const configuration = parseCanonicalConfiguration(JSON.stringify({
+			...createCanonicalConfiguration('repository'),
+			integrations: {
+				'local-tools': {
+					activation: 'off',
+					clients: ['codex', 'cursor'],
+				},
+			},
+		}), 'repository');
+		assert.deepStrictEqual(configuration.integrations['local-tools'], {
+			activation: 'off',
+			clients: ['codex', 'cursor'],
+		});
+		assert.throws(
+			() => parseCanonicalConfiguration(JSON.stringify({
+				...createCanonicalConfiguration('repository'),
+				integrations: {
+					'local-tools': { clients: ['cursor', 'cursor'] },
+				},
+			})),
+			/unique supported client IDs/
+		);
+	});
 });
 
 suite('Skill Management', () => {
@@ -223,5 +256,168 @@ suite('Skill Management', () => {
 		assert.strictEqual(sections.needsAttention[0].id, 'missing');
 		assert.deepStrictEqual(sections.needsAttention[0].origins, ['repository']);
 		assert.match(sections.needsAttention[0].issue ?? '', /No canonical definition/);
+	});
+});
+
+suite('MCP Integration', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	const localResource: ICanonicalMcpDefinitionResource = {
+		id: 'local-tools',
+		origin: 'global',
+		resource: URI.file('/global/integrations/local-tools.json'),
+		definition: {
+			version: 1,
+			id: 'local-tools',
+			name: 'Local tools',
+			description: 'Local development tools.',
+			transport: {
+				type: 'stdio',
+				command: 'node',
+				args: ['server.mjs'],
+			},
+		},
+	};
+	const remoteResource: ICanonicalMcpDefinitionResource = {
+		id: 'remote-docs',
+		origin: 'repository',
+		resource: URI.file('/repository/.repository-context/integrations/remote-docs.json'),
+		definition: {
+			version: 1,
+			id: 'remote-docs',
+			name: 'Remote docs',
+			description: 'Remote documentation tools.',
+			transport: {
+				type: 'http',
+				url: 'https://example.com/mcp',
+			},
+		},
+	};
+
+	test('keeps stdio and HTTP definitions distinct and portable', () => {
+		const local = parseCanonicalMcpDefinition(serializeCanonicalMcpDefinition(localResource.definition!));
+		const remote = parseCanonicalMcpDefinition(serializeCanonicalMcpDefinition(remoteResource.definition!));
+
+		assert.strictEqual(local.transport.type, 'stdio');
+		assert.strictEqual(remote.transport.type, 'http');
+		assert.doesNotMatch(serializeCanonicalMcpDefinition(local), /token|secret|header/i);
+	});
+
+	test('rejects credentials and shell-like extension fields', () => {
+		assert.throws(
+			() => parseCanonicalMcpDefinition(JSON.stringify({
+				...remoteResource.definition,
+				transport: {
+					type: 'http',
+					url: 'https://example.com/mcp',
+					headers: { Authorization: 'Bearer secret' },
+				},
+			})),
+			/unsupported fields: headers/
+		);
+		assert.throws(
+			() => parseCanonicalMcpDefinition(JSON.stringify({
+				...localResource.definition,
+				transport: {
+					type: 'stdio',
+					command: 'node',
+					args: [],
+					env: { TOKEN: 'secret' },
+				},
+			})),
+			/unsupported fields: env/
+		);
+		assert.throws(
+			() => parseCanonicalMcpDefinition(JSON.stringify({
+				...localResource.definition,
+				transport: {
+					type: 'stdio',
+					command: 'node',
+					args: ['server.js', '--token=literal-secret'],
+				},
+			})),
+			/must not contain credential/
+		);
+		assert.throws(
+			() => parseCanonicalMcpDefinition(JSON.stringify({
+				...remoteResource.definition,
+				transport: {
+					type: 'http',
+					url: 'https://example.com/mcp?token=literal-secret',
+				},
+			})),
+			/must not contain credentials, query parameters, or fragments/
+		);
+	});
+
+	test('resolves repository activation and client overrides independently', () => {
+		const sections = resolveEffectiveMcpIntegrations(
+			[localResource, remoteResource],
+			{
+				'local-tools': { activation: 'off', clients: ['codex'] },
+				'remote-docs': { activation: 'on', clients: ['claude-code'] },
+			},
+			{
+				'local-tools': { activation: 'on', clients: ['cursor'] },
+				'remote-docs': { activation: 'off' },
+			}
+		);
+
+		assert.deepStrictEqual(sections.enabled.map(integration => integration.id), ['local-tools']);
+		assert.deepStrictEqual(sections.enabled[0].clients, ['cursor']);
+		assert.deepStrictEqual(sections.available.map(integration => integration.id), ['remote-docs']);
+		assert.deepStrictEqual(sections.available[0].clients, ['claude-code']);
+	});
+
+	test('keeps disabled definitions installed and reports missing definitions', () => {
+		const sections = resolveEffectiveMcpIntegrations(
+			[localResource],
+			{ 'local-tools': { activation: 'off', clients: ['codex'] } },
+			{ missing: { activation: 'on' } },
+		);
+
+		assert.strictEqual(sections.available[0].definitionResource?.fsPath, '/global/integrations/local-tools.json');
+		assert.strictEqual(sections.needsAttention[0].id, 'missing');
+		assert.match(sections.needsAttention[0].issue ?? '', /No canonical MCP definition/);
+	});
+
+	test('projects a canonical definition into Claude project configuration without clobbering other entries', () => {
+		const definition = remoteResource.definition!;
+		const existing = JSON.stringify({
+			projectSetting: true,
+			mcpServers: {
+				other: { type: 'stdio', command: 'other' },
+			},
+		});
+
+		assert.strictEqual(inspectClaudeMcpProjection(existing, definition), 'missing');
+		const output = projectClaudeMcpDefinition(existing, definition);
+		assert.strictEqual(inspectClaudeMcpProjection(output, definition), 'projected');
+		const parsed = JSON.parse(output);
+		assert.strictEqual(parsed.projectSetting, true);
+		assert.deepStrictEqual(parsed.mcpServers.other, { type: 'stdio', command: 'other' });
+		assert.deepStrictEqual(parsed.mcpServers['remote-docs'], {
+			type: 'http',
+			url: 'https://example.com/mcp',
+		});
+	});
+
+	test('blocks replacement of an existing Claude project entry until explicitly requested', () => {
+		const definition = localResource.definition!;
+		const existing = JSON.stringify({
+			mcpServers: {
+				'local-tools': { type: 'stdio', command: 'custom' },
+			},
+		});
+
+		assert.strictEqual(inspectClaudeMcpProjection(existing, definition), 'conflict');
+		assert.throws(
+			() => projectClaudeMcpDefinition(existing, definition),
+			/differs from the canonical definition/
+		);
+		assert.strictEqual(
+			inspectClaudeMcpProjection(projectClaudeMcpDefinition(existing, definition, true), definition),
+			'projected'
+		);
 	});
 });

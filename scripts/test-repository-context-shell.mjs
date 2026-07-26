@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -38,6 +38,14 @@ async function writeSkillFixture(root, id, name, description) {
 		`# ${name}`,
 		'',
 	].join('\n'));
+}
+
+async function writeIntegrationFixture(root, definition) {
+	await mkdir(root, { recursive: true });
+	await writeFile(
+		join(root, `${definition.id}.json`),
+		`${JSON.stringify({ version: 1, ...definition }, null, '\t')}\n`
+	);
 }
 
 async function waitFor(predicate, message) {
@@ -192,6 +200,25 @@ async function main() {
 			writeSkillFixture(join(existingConfigurationPath, 'skills'), 'conflict', 'Global Conflict', 'Global conflicting definition.'),
 			writeSkillFixture(join(fixturePath, '.repository-context', 'skills'), 'release', 'Release', 'Prepare repository releases.'),
 			writeSkillFixture(join(fixturePath, '.repository-context', 'skills'), 'conflict', 'Repository Conflict', 'Repository conflicting definition.'),
+			writeIntegrationFixture(join(existingConfigurationPath, 'integrations'), {
+				id: 'local-tools',
+				name: 'Local tools',
+				description: 'Local repository tools.',
+				transport: {
+					type: 'stdio',
+					command: 'node',
+					args: ['mcp-local-server.mjs'],
+				},
+			}),
+			writeIntegrationFixture(join(fixturePath, '.repository-context', 'integrations'), {
+				id: 'remote-docs',
+				name: 'Remote docs',
+				description: 'Remote documentation tools.',
+				transport: {
+					type: 'http',
+					url: 'https://example.invalid/mcp',
+				},
+			}),
 			writeFile(join(fixturePath, '.repository-context', 'config.json'), [
 				'{',
 				'\t"version": 1,',
@@ -201,8 +228,33 @@ async function main() {
 				'\t\t\t"activation": "off"',
 				'\t\t}',
 				'\t},',
-				'\t"integrations": {}',
+				'\t"integrations": {',
+				'\t\t"local-tools": {',
+				'\t\t\t"clients": ["claude-code"]',
+				'\t\t},',
+				'\t\t"remote-docs": {',
+				'\t\t\t"activation": "off",',
+				'\t\t\t"clients": ["codex"]',
+				'\t\t}',
+				'\t}',
 				'}',
+				'',
+			].join('\n')),
+			writeFile(join(fixturePath, 'mcp-local-server.mjs'), [
+				'import { createInterface } from "node:readline";',
+				'const lines = createInterface({ input: process.stdin });',
+				'lines.once("line", line => {',
+				'\tconst request = JSON.parse(line);',
+				'\tprocess.stdout.write(`${JSON.stringify({',
+				'\t\tjsonrpc: "2.0",',
+				'\t\tid: request.id,',
+				'\t\tresult: {',
+				'\t\t\tprotocolVersion: "2025-06-18",',
+				'\t\t\tcapabilities: { tools: {}, resources: {} },',
+				'\t\t\tserverInfo: { name: "smoke-local", version: "1.0.0" }',
+				'\t\t}',
+				'\t})}\\n`);',
+				'});',
 				'',
 			].join('\n')),
 			writeFile(join(fixturePath, 'conflict.txt'), 'base\n'),
@@ -313,7 +365,7 @@ async function main() {
 		assert.equal(await readFile(existingConfigurationFile, 'utf8'), expectedGlobalConfiguration);
 		assert.deepEqual(
 			runGit(existingConfigurationPath, ['status', '--porcelain']).split('\n').sort(),
-			['?? repository-context.json', '?? skills/']
+			['?? integrations/', '?? repository-context.json', '?? skills/']
 		);
 		assert.notEqual(
 			spawnSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: existingConfigurationPath }).status,
@@ -447,6 +499,73 @@ async function main() {
 		await page.getByRole('button', { name: 'Views and More Actions...' }).click();
 		await page.getByRole('menuitem', { name: 'Manage Global Skill Library...' }).waitFor();
 		await page.keyboard.press('Escape');
+
+		await page.getByRole('tab', { name: 'Integrations' }).click();
+		await page.getByRole('heading', { name: 'MCP Servers' }).waitFor();
+		await page.getByRole('heading', { name: 'Enabled 1' }).waitFor();
+		await page.getByRole('heading', { name: 'Available 1' }).waitFor();
+		const localIntegration = page.locator(
+			'.repository-context-integration-row[data-integration-id="local-tools"]'
+		);
+		const remoteIntegration = page.locator(
+			'.repository-context-integration-row[data-integration-id="remote-docs"]'
+		);
+		assert.match(await localIntegration.innerText(), /Local process/i);
+		assert.match(await localIntegration.innerText(), /Global/i);
+		assert.match(await localIntegration.innerText(), /Claude Code · missing/i);
+		assert.match(await remoteIntegration.innerText(), /Remote endpoint/i);
+		assert.match(await remoteIntegration.innerText(), /Repository/i);
+		assert.match(await remoteIntegration.innerText(), /Not checked/);
+
+		await localIntegration.getByRole('button', { name: 'Project' }).click();
+		await waitFor(
+			() => existsSync(join(fixturePath, '.mcp.json')),
+			'MCP definition was not projected to Claude Code.'
+		);
+		const projectedMcp = JSON.parse(await readFile(join(fixturePath, '.mcp.json'), 'utf8'));
+		assert.deepEqual(projectedMcp.mcpServers['local-tools'], {
+			type: 'stdio',
+			command: 'node',
+			args: ['mcp-local-server.mjs'],
+		});
+		assert.equal(projectedMcp.mcpServers['remote-docs'], undefined);
+		await localIntegration.getByText('Claude Code · projected', { exact: true }).waitFor();
+
+		await localIntegration.getByRole('button', { name: 'Check health' }).click();
+		const healthDialog = page.getByRole('dialog').filter({
+			hasText: 'Start this local MCP process to check its capabilities?',
+		});
+		await healthDialog.waitFor();
+		assert.match(await healthDialog.innerText(), /Command: node/);
+		assert.match(await healthDialog.innerText(), /Arguments: \["mcp-local-server\.mjs"\]/);
+		await healthDialog.getByRole('button', { name: 'Start and check' }).click();
+		await localIntegration.getByText('Healthy', { exact: true }).waitFor();
+		assert.match(await localIntegration.innerText(), /Protocol 2025-06-18/);
+		assert.match(await localIntegration.innerText(), /resources, tools/);
+		assert.doesNotMatch(
+			await readFile(join(fixturePath, '.repository-context', 'config.json'), 'utf8'),
+			/healthy|checkedAt|resources/
+		);
+
+		await remoteIntegration.getByRole('button', { name: 'On', exact: true }).click();
+		await waitFor(async () => {
+			const configuration = JSON.parse(await readFile(
+				join(fixturePath, '.repository-context', 'config.json'),
+				'utf8'
+			));
+			return configuration.integrations['remote-docs']?.activation === 'on';
+		}, 'Repository MCP On override was not persisted.');
+		await page.locator('.repository-context-integration-row[data-integration-id="remote-docs"]')
+			.getByRole('button', { name: 'Inherit', exact: true }).click();
+		await waitFor(async () => {
+			const configuration = JSON.parse(await readFile(
+				join(fixturePath, '.repository-context', 'config.json'),
+				'utf8'
+			));
+			return configuration.integrations['remote-docs']?.activation === undefined &&
+				configuration.integrations['remote-docs']?.clients?.[0] === 'codex';
+		}, 'Repository MCP activation override was not removed independently.');
+
 		await page.getByRole('tab', { name: /^Source Control/ }).click();
 		await page.getByRole('treeitem', { name: /^staged\.txt, Index Modified/ }).waitFor();
 

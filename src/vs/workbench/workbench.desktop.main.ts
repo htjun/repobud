@@ -100,6 +100,7 @@ import './services/browserView/electron-browser/playwrightWorkbenchService.js';
 import './services/process/electron-browser/processService.js';
 import './services/power/electron-browser/powerService.js';
 import './services/repositoryContext/electron-browser/skillProjectionService.js';
+import './services/repositoryContext/electron-browser/mcpHealthService.js';
 
 import { registerSingleton } from '../platform/instantiation/common/extensions.js';
 import { IUserDataInitializationService, UserDataInitializationService } from './services/userData/browser/userDataInit.js';

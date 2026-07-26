@@ -26,11 +26,13 @@ import { REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS, REPOSITORY_CONTEXT_VIEW_IDS, isR
 import { IRepositoryCatalogService } from '../common/repositoryCatalog.js';
 import './canonicalConfigurationActions.js';
 import './canonicalConfigurationService.js';
+import './contextMcpIntegrationService.js';
 import './contextSkillService.js';
 import './repositoryCatalogActions.js';
 import './repositoryCatalogService.js';
 import './skillActions.js';
 import { RepositoryContextViewPane } from './repositoryContextView.js';
+import { IntegrationsViewPane } from './integrationsView.js';
 import { SkillsViewPane } from './skillsView.js';
 
 const configurationRegistry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration);
@@ -125,7 +127,8 @@ registerProductArea(
 	localize2('repositoryContextIntegrations', 'Integrations'),
 	integrationsViewIcon,
 	4,
-	localize('repositoryContextIntegrationsWelcome', 'MCP servers, connections, and plugins for the active repository will appear here.')
+	localize('repositoryContextIntegrationsWelcome', 'MCP servers, connections, and plugins for the active repository will appear here.'),
+	new SyncDescriptor(IntegrationsViewPane)
 );
 
 class RepositoryContextStartupContribution extends Disposable {

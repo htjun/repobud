@@ -1,0 +1,35 @@
+{
+	"snapshot": "2026-07-26",
+	"protocol": {
+		"revision": "2025-06-18",
+		"transports": [
+			"stdio",
+			"streamable-http"
+		]
+	},
+	"clients": {
+		"codex": {
+			"version": "0.145.0",
+			"projectPath": ".codex/config.toml",
+			"adapter": "unsupported",
+			"reason": "Same-ID layered table behavior is not documented."
+		},
+		"claude-code": {
+			"version": "2.1.220",
+			"projectPath": ".mcp.json",
+			"adapter": "json-project-v1",
+			"serverRoot": "mcpServers",
+			"transports": [
+				"stdio",
+				"http"
+			]
+		},
+		"cursor": {
+			"version": "3.13.10",
+			"commit": "4f02290ccd9304f0e6bf8ee85f6e9106f02ac1f7",
+			"projectPath": ".cursor/mcp.json",
+			"adapter": "unsupported",
+			"reason": "Same-name precedence and toggle persistence are not documented."
+		}
+	}
+}

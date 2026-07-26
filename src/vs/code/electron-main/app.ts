@@ -142,10 +142,15 @@ import { IMcpGatewayService, McpGatewayChannelName } from '../../platform/mcp/co
 import { McpGatewayService } from '../../platform/mcp/node/mcpGatewayService.js';
 import { McpGatewayChannel } from '../../platform/mcp/node/mcpGatewayChannel.js';
 import {
+	IRepositoryContextMcpHealthService,
+	REPOSITORY_CONTEXT_MCP_HEALTH_CHANNEL,
+} from '../../platform/repositoryContext/common/mcpHealth.js';
+import {
 	IRepositoryContextSkillProjectionService,
 	REPOSITORY_CONTEXT_SKILL_PROJECTION_CHANNEL,
 } from '../../platform/repositoryContext/common/skillProjection.js';
 import { RepositoryContextSkillProjectionMainService } from '../../platform/repositoryContext/electron-main/skillProjectionMainService.js';
+import { RepositoryContextMcpHealthMainService } from '../../platform/repositoryContext/electron-main/mcpHealthMainService.js';
 import { IWebContentExtractorService } from '../../platform/webContentExtractor/common/webContentExtractor.js';
 import { NativeWebContentExtractorService } from '../../platform/webContentExtractor/electron-main/webContentExtractorService.js';
 import { AgentNetworkFilterService, IAgentNetworkFilterService } from '../../platform/networkFilter/common/networkFilterService.js';
@@ -1303,6 +1308,10 @@ export class CodeApplication extends Disposable {
 			IRepositoryContextSkillProjectionService,
 			new SyncDescriptor(RepositoryContextSkillProjectionMainService)
 		);
+		services.set(
+			IRepositoryContextMcpHealthService,
+			new SyncDescriptor(RepositoryContextMcpHealthMainService)
+		);
 
 		// Dev Only: CSS service (for ESM)
 		services.set(ICSSDevelopmentService, new SyncDescriptor(CSSDevelopmentService, undefined, true));
@@ -1451,6 +1460,14 @@ export class CodeApplication extends Disposable {
 		mainProcessElectronServer.registerChannel(
 			REPOSITORY_CONTEXT_SKILL_PROJECTION_CHANNEL,
 			repositoryContextSkillProjectionChannel
+		);
+		const repositoryContextMcpHealthChannel = ProxyChannel.fromService(
+			accessor.get(IRepositoryContextMcpHealthService),
+			disposables
+		);
+		mainProcessElectronServer.registerChannel(
+			REPOSITORY_CONTEXT_MCP_HEALTH_CHANNEL,
+			repositoryContextMcpHealthChannel
 		);
 		const mcpGatewayChannel = this._register(new McpGatewayChannel(mainProcessElectronServer, accessor.get(IMcpGatewayService), accessor.get(ILoggerMainService)));
 		mainProcessElectronServer.registerChannel(McpGatewayChannelName, mcpGatewayChannel);
