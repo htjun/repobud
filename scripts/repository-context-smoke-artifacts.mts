@@ -1,20 +1,27 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const maximumLogFiles = 50;
 const maximumLogBytes = 2 * 1024 * 1024;
 
+/**
+ * Escapes a literal value for use in a regular expression.
+ */
 function escapeRegExp(value) {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Redacts credentials and caller-provided sensitive values from diagnostic text.
+ */
 export function redactSmokeText(value, sensitiveValues = []) {
 	let redacted = String(value ?? '');
 	const exactValues = [...new Set(sensitiveValues.filter(Boolean))]
@@ -36,6 +43,9 @@ export function redactSmokeText(value, sensitiveValues = []) {
 		);
 }
 
+/**
+ * Collects a bounded set of regular log files without following symbolic links.
+ */
 async function listLogFiles(root, output = []) {
 	if (output.length >= maximumLogFiles) {
 		return output;
@@ -68,10 +78,16 @@ async function listLogFiles(root, output = []) {
 	return output;
 }
 
+/**
+ * Produces a filesystem-safe UTC timestamp for an artifact directory.
+ */
 function artifactTimestamp() {
 	return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
+/**
+ * Captures a bounded, sanitized diagnostic bundle for a packaged smoke failure.
+ */
 export async function captureSmokeFailureArtifacts(options) {
 	const artifactBase = resolve(
 		options.artifactBase ?? join(repositoryRoot, 'test-results', 'repository-context-shell')
@@ -81,7 +97,9 @@ export async function captureSmokeFailureArtifacts(options) {
 		`failure-${artifactTimestamp()}-${process.pid}`
 	);
 	const sensitiveValues = [
+		homedir(),
 		options.temporaryRoot,
+		options.temporaryRoot && basename(options.temporaryRoot),
 		...(options.sensitiveValues ?? []),
 	].filter(Boolean);
 	const writtenFiles = [];
@@ -89,33 +107,44 @@ export async function captureSmokeFailureArtifacts(options) {
 	await mkdir(artifactDirectory, { recursive: true });
 
 	if (options.page) {
-		await options.page.evaluate((values) => {
-			for (const input of document.querySelectorAll('input, textarea')) {
-				if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
-					if (input.type === 'password' || values.some(value => input.value.includes(value))) {
-						input.value = '';
+		try {
+			await options.page.evaluate((values) => {
+				for (const input of document.querySelectorAll('input, textarea')) {
+					if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+						if (input.type === 'password' || values.some(value => input.value.includes(value))) {
+							input.value = '';
+						}
 					}
 				}
-			}
-			const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-			let node;
-			while ((node = walker.nextNode())) {
-				if (!node.textContent) {
-					continue;
+				const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+				let node;
+				while ((node = walker.nextNode())) {
+					if (!node.textContent) {
+						continue;
+					}
+					for (const value of values) {
+						node.textContent = node.textContent.replaceAll(value, '[REDACTED]');
+					}
 				}
-				for (const value of values) {
-					node.textContent = node.textContent.replaceAll(value, '[REDACTED]');
-				}
-			}
-		}, sensitiveValues).catch(() => undefined);
+			}, sensitiveValues);
+		} catch {
+			// A renderer failure must not prevent the remaining diagnostics from being captured.
+		}
 
 		const screenshotPath = join(artifactDirectory, 'screenshot.png');
-		await options.page.screenshot({ path: screenshotPath, fullPage: true })
-			.then(() => writtenFiles.push('screenshot.png'))
-			.catch(() => undefined);
+		try {
+			await options.page.screenshot({ path: screenshotPath, fullPage: true });
+			writtenFiles.push('screenshot.png');
+		} catch {
+			// Continue with text diagnostics when the renderer cannot produce a screenshot.
+		}
 
-		const accessibility = await options.page.locator('body').ariaSnapshot()
-			.catch(() => 'Accessibility snapshot was unavailable.');
+		let accessibility = 'Accessibility snapshot was unavailable.';
+		try {
+			accessibility = await options.page.locator('body').ariaSnapshot();
+		} catch {
+			// The fallback still records why this diagnostic is absent.
+		}
 		await writeFile(
 			join(artifactDirectory, 'accessibility.txt'),
 			`${redactSmokeText(accessibility, sensitiveValues)}\n`

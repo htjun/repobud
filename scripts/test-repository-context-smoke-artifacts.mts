@@ -1,16 +1,16 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import {
 	captureSmokeFailureArtifacts,
 	redactSmokeText,
-} from './repository-context-smoke-artifacts.mjs';
+} from './repository-context-smoke-artifacts.mts';
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'repository-context-artifact-test-'));
 const artifactBase = join(temporaryRoot, 'artifacts');
@@ -47,7 +47,9 @@ try {
 		temporaryRoot,
 		userDataPath,
 		sensitiveValues: [fixtureToken],
-		applicationLog: [`password=${fixtureToken}\n`],
+		applicationLog: [
+			`password=${fixtureToken}\nhome=${homedir()}\nnamespace=${basename(temporaryRoot)}\n`,
+		],
 		consoleErrors: [`https://user:${fixtureToken}@example.invalid/repository`],
 		error: new Error(`Failed at ${temporaryRoot} with ${fixtureToken}`),
 		page,
@@ -79,6 +81,8 @@ try {
 		const content = await readFile(join(artifactDirectory, relativePath), 'utf8');
 		assert.doesNotMatch(content, new RegExp(fixtureToken));
 		assert.doesNotMatch(content, new RegExp(temporaryRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+		assert.doesNotMatch(content, new RegExp(homedir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+		assert.doesNotMatch(content, new RegExp(basename(temporaryRoot)));
 	}
 
 	assert.equal(

@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -8,7 +8,7 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
-import { verifyRepositoryContextPackage } from './repository-context-package.mjs';
+import { verifyRepositoryContextPackage } from './repository-context-package.mts';
 
 const previewDataRoot = process.env.REPOSITORY_CONTEXT_PREVIEW_DATA_DIR ??
 	join(homedir(), '.repository-context-workbench-preview');
@@ -24,6 +24,9 @@ await Promise.all([
 	mkdir(sharedDataDirectory, { recursive: true }),
 ]);
 
+/**
+ * Opens the verified package and returns the launcher exit code.
+ */
 function run(command, args) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {

@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -11,12 +11,15 @@ import {
 	repositoryRoot,
 	resolvePackagePaths,
 	verifyRepositoryContextPackage,
-} from './repository-context-package.mjs';
+} from './repository-context-package.mts';
 
 if (process.platform !== 'darwin' || process.arch !== 'arm64') {
 	throw new Error('The initial Repository Context package target requires macOS on Apple silicon.');
 }
 
+/**
+ * Runs a packaging command and rejects when the child process fails.
+ */
 function run(command, args) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {
@@ -55,12 +58,7 @@ await run('/usr/bin/plutil', [
 	product.darwinMinimumSystemVersion,
 	packagePaths.infoPlistPath,
 ]);
-for (const privacyKey of [
-	'NSAppleEventsUsageDescription',
-	'NSAudioCaptureUsageDescription',
-	'NSCameraUsageDescription',
-	'NSMicrophoneUsageDescription',
-]) {
+for (const privacyKey of product.darwinRemovedPrivacyUsageDescriptions) {
 	spawnSync('/usr/libexec/PlistBuddy', [
 		'-c',
 		`Delete :${privacyKey}`,

@@ -30,6 +30,12 @@
 	"darwinBundleIdentifier": "dev.repositorycontext.workbench",
 	"darwinIcon": "resources/darwin/repository-context.icns",
 	"darwinMinimumSystemVersion": "13.0",
+	"darwinRemovedPrivacyUsageDescriptions": [
+		"NSAppleEventsUsageDescription",
+		"NSAudioCaptureUsageDescription",
+		"NSCameraUsageDescription",
+		"NSMicrophoneUsageDescription"
+	],
 	"darwinProfileUUID": "66678ACA-177C-4142-A14B-10BE2E526CFB",
 	"darwinProfilePayloadUUID": "895B1943-8E32-4A68-8B09-99B79C58F1BF",
 	"linuxIconName": "repository-context",

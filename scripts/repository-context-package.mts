@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -11,10 +11,16 @@ import { fileURLToPath } from 'node:url';
 
 export const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
+/**
+ * Reads and parses a JSON file.
+ */
 async function readJson(path) {
 	return JSON.parse(await readFile(path, 'utf8'));
 }
 
+/**
+ * Resolves the expected filesystem layout of a packaged application.
+ */
 export function resolvePackagePaths(packageRoot = process.env.REPOSITORY_CONTEXT_PACKAGE_ROOT) {
 	const resolvedPackageRoot = resolve(
 		packageRoot ?? join(repositoryRoot, '..', 'VSCode-darwin-arm64')
@@ -29,12 +35,18 @@ export function resolvePackagePaths(packageRoot = process.env.REPOSITORY_CONTEXT
 	};
 }
 
+/**
+ * Reads a value from a macOS property list.
+ */
 function readPlistValue(infoPlistPath, key) {
 	return execFileSync('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, infoPlistPath], {
 		encoding: 'utf8',
 	}).trim();
 }
 
+/**
+ * Returns the CPU architectures contained in a Mach-O executable.
+ */
 function readArchitectures(executablePath) {
 	return execFileSync('/usr/bin/lipo', ['-archs', executablePath], { encoding: 'utf8' })
 		.trim()
@@ -42,6 +54,9 @@ function readArchitectures(executablePath) {
 		.filter(Boolean);
 }
 
+/**
+ * Verifies the complete application signature using strict macOS checks.
+ */
 function verifyStrictSignature(applicationPath) {
 	execFileSync('/usr/bin/codesign', [
 		'--verify',
@@ -52,6 +67,9 @@ function verifyStrictSignature(applicationPath) {
 	], { stdio: 'pipe' });
 }
 
+/**
+ * Verifies package identity, provenance, platform support, and signing integrity.
+ */
 export async function verifyRepositoryContextPackage(options = {}) {
 	const paths = resolvePackagePaths(options.packageRoot);
 	const [sourceProduct, sourcePackage, packagedProduct] = await Promise.all([
@@ -83,6 +101,12 @@ export async function verifyRepositoryContextPackage(options = {}) {
 	assert.equal(bundleName, sourceProduct.nameShort);
 	assert.equal(minimumSystemVersion, sourceProduct.darwinMinimumSystemVersion);
 	assert.equal(iconFile, `${sourceProduct.nameShort}.icns`);
+	for (const privacyKey of sourceProduct.darwinRemovedPrivacyUsageDescriptions) {
+		assert.throws(
+			() => readPlistValue(paths.infoPlistPath, privacyKey),
+			`The package still declares unused privacy usage description ${privacyKey}.`
+		);
+	}
 	assert.equal(packagedProduct.version, sourcePackage.version);
 	assert.equal(packagedProduct.updateUrl, undefined, 'The update service must remain disabled for preview packages.');
 	assert.doesNotMatch(

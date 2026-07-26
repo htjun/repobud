@@ -17,12 +17,25 @@ import { chromium } from 'playwright-core';
 import {
 	captureSmokeFailureArtifacts,
 	redactSmokeText,
-} from './repository-context-smoke-artifacts.mjs';
+} from './repository-context-smoke-artifacts.mts';
 
 const repositoryRoot = process.cwd();
 const applicationPath = process.env.REPOSITORY_CONTEXT_APP_PATH ??
 	join(repositoryRoot, '..', 'VSCode-darwin-arm64', 'Repository Context Workbench.app');
 const executablePath = join(applicationPath, 'Contents', 'MacOS', 'Repository Context');
+
+/**
+ * Builds the minimal host environment required by the packaged application.
+ */
+function createIsolatedApplicationEnvironment(overrides) {
+	const environment = {};
+	for (const name of ['LANG', 'LC_ALL', 'LOGNAME', 'PATH', 'SHELL', 'USER']) {
+		if (process.env[name]) {
+			environment[name] = process.env[name];
+		}
+	}
+	return { ...environment, ...overrides };
+}
 
 function runGit(cwd, args) {
 	const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -241,6 +254,7 @@ async function main() {
 	const userDataPath = join(temporaryRoot, 'profile');
 	const extensionsPath = join(temporaryRoot, 'extensions');
 	const sharedDataPath = join(temporaryRoot, 'shared');
+	const isolatedHomePath = join(temporaryRoot, 'home');
 	const initializedConfigurationPath = join(temporaryRoot, 'configuration-new');
 	const existingConfigurationPath = join(temporaryRoot, 'configuration-existing');
 	const pluginSourcePath = join(temporaryRoot, 'plugin-source');
@@ -258,6 +272,7 @@ async function main() {
 			mkdir(userDataPath),
 			mkdir(extensionsPath),
 			mkdir(sharedDataPath),
+			mkdir(isolatedHomePath),
 			mkdir(initializedConfigurationPath),
 			mkdir(existingConfigurationPath),
 			mkdir(pluginSourcePath),
@@ -438,12 +453,13 @@ async function main() {
 			'--use-mock-keychain',
 			`--folder-uri=${pathToFileURL(fixturePath).toString()}`,
 		], {
-			env: {
-				...process.env,
+			env: createIsolatedApplicationEnvironment({
+				HOME: isolatedHomePath,
 				TMPDIR: temporaryRoot,
+				USERPROFILE: isolatedHomePath,
 				REPOSITORY_CONTEXT_GITHUB_USER_URL: githubFixture.url,
 				REPOSITORY_CONTEXT_KEYCHAIN_NAMESPACE: keychainNamespace,
-			},
+			}),
 			stdio: ['ignore', 'pipe', 'pipe'],
 		});
 		child.stdout.on('data', chunk => applicationLog.push(chunk.toString()));

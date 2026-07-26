@@ -101,12 +101,7 @@ async function main(buildDir?: string): Promise<void> {
 			product.darwinMinimumSystemVersion,
 			infoPlistPath,
 		]);
-		for (const privacyKey of [
-			'NSAppleEventsUsageDescription',
-			'NSAudioCaptureUsageDescription',
-			'NSCameraUsageDescription',
-			'NSMicrophoneUsageDescription',
-		]) {
+		for (const privacyKey of product.darwinRemovedPrivacyUsageDescriptions) {
 			await spawn('/usr/libexec/PlistBuddy', [
 				'-c',
 				`Delete :${privacyKey}`,

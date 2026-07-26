@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -14,11 +14,14 @@ import {
 	diffGitManifestInventories,
 	downstreamOnlyCommands,
 	pinnedUpstreamInventory,
-} from './git-command-inventory.mjs';
+} from './git-command-inventory.mts';
 
 const repositoryRoot = resolve(import.meta.dirname, '..');
 const expectedUpstreamUrl = 'https://github.com/microsoft/vscode.git';
 
+/**
+ * Reads a required-value command-line option.
+ */
 function readOption(name) {
 	const index = process.argv.indexOf(name);
 	if (index === -1) {
@@ -31,6 +34,9 @@ function readOption(name) {
 	return value;
 }
 
+/**
+ * Runs Git in the downstream source checkout and returns trimmed stdout.
+ */
 function runGit(args) {
 	return execFileSync('git', args, {
 		cwd: repositoryRoot,
@@ -39,14 +45,23 @@ function runGit(args) {
 	}).trim();
 }
 
+/**
+ * Reads the Git extension manifest at a specific revision.
+ */
 function readManifest(revision) {
 	return JSON.parse(runGit(['show', `${revision}:extensions/git/package.json`]));
 }
 
+/**
+ * Formats a report section as a Markdown list.
+ */
 function formatList(values, formatter = value => `- \`${value}\``) {
 	return values.length === 0 ? '- None' : values.map(formatter).join('\n');
 }
 
+/**
+ * Formats a normalized menu entry for the rehearsal report.
+ */
 function formatMenu(entry) {
 	const suffix = [
 		entry.alt && `alt=${entry.alt}`,
@@ -54,6 +69,42 @@ function formatMenu(entry) {
 		entry.when && `when=${entry.when}`,
 	].filter(Boolean).join(', ');
 	return `- \`${entry.location}: ${entry.command}\`${suffix ? ` (${suffix})` : ''}`;
+}
+
+/**
+ * Resolves a tag directly from the official upstream remote.
+ */
+function readRemoteTagCommit(tag) {
+	const result = spawnSync(
+		'git',
+		[
+			'ls-remote',
+			'--exit-code',
+			'--tags',
+			'upstream',
+			`refs/tags/${tag}`,
+			`refs/tags/${tag}^{}`,
+		],
+		{
+			cwd: repositoryRoot,
+			encoding: 'utf8',
+			maxBuffer: 1024 * 1024,
+		}
+	);
+	assert.equal(
+		result.status,
+		0,
+		`The candidate tag ${tag} does not exist on the official upstream remote: ${result.stderr.trim()}`
+	);
+	const references = new Map(
+		result.stdout.trim().split('\n').filter(Boolean).map(line => {
+			const [commit, reference] = line.split(/\s+/);
+			return [reference, commit];
+		})
+	);
+	const commit = references.get(`refs/tags/${tag}^{}`) ?? references.get(`refs/tags/${tag}`);
+	assert.match(commit ?? '', /^[a-f0-9]{40}$/, `The upstream tag ${tag} did not resolve to a commit.`);
+	return commit;
 }
 
 const candidateTag = readOption('--tag') ?? pinnedUpstreamInventory.tag;
@@ -71,7 +122,7 @@ assert.equal(
 if (shouldFetch) {
 	const fetchResult = spawnSync(
 		'git',
-		['fetch', 'upstream', `refs/tags/${candidateTag}:refs/tags/${candidateTag}`],
+		['fetch', 'upstream', `+refs/tags/${candidateTag}:refs/tags/${candidateTag}`],
 		{ cwd: repositoryRoot, encoding: 'utf8', stdio: 'inherit' }
 	);
 	if (fetchResult.status !== 0) {
@@ -79,21 +130,29 @@ if (shouldFetch) {
 	}
 }
 
-const candidateObjectType = runGit(['cat-file', '-t', candidateTag]);
+const candidateRevision = `refs/tags/${candidateTag}`;
+const candidateObjectType = runGit(['cat-file', '-t', candidateRevision]);
 assert.ok(
 	candidateObjectType === 'commit' || candidateObjectType === 'tag',
 	'The candidate must resolve to a stable-tag commit.'
 );
-const candidateCommit = runGit(['rev-parse', `${candidateTag}^{commit}`]);
-const baselineCommit = runGit(['rev-parse', `${pinnedUpstreamInventory.tag}^{commit}`]);
+const candidateCommit = runGit(['rev-parse', `${candidateRevision}^{commit}`]);
+const remoteCandidateCommit = readRemoteTagCommit(candidateTag);
+assert.equal(
+	candidateCommit,
+	remoteCandidateCommit,
+	`The local candidate tag ${candidateTag} does not match the official upstream tag. Rerun with --fetch.`
+);
+const baselineRevision = `refs/tags/${pinnedUpstreamInventory.tag}`;
+const baselineCommit = runGit(['rev-parse', `${baselineRevision}^{commit}`]);
 assert.equal(
 	baselineCommit,
 	pinnedUpstreamInventory.commit,
 	'The pinned upstream tag no longer resolves to its recorded commit.'
 );
 
-const baseline = createGitManifestInventory(readManifest(pinnedUpstreamInventory.tag));
-const candidate = createGitManifestInventory(readManifest(candidateTag));
+const baseline = createGitManifestInventory(readManifest(baselineRevision));
+const candidate = createGitManifestInventory(readManifest(candidateRevision));
 const downstream = createGitManifestInventory(
 	JSON.parse(runGit(['show', 'HEAD:extensions/git/package.json']))
 );

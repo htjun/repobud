@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -66,14 +66,23 @@ export const downstreamOnlyCommands = new Set([
 	'git.openFileInExternalEditor',
 ]);
 
+/**
+ * Produces a stable digest for an ordered list of manifest declarations.
+ */
 function hashLines(lines) {
 	return createHash('sha256').update(lines.join('\n')).digest('hex');
 }
 
+/**
+ * Serializes a normalized menu entry for comparison and hashing.
+ */
 function menuKey(entry) {
 	return JSON.stringify(entry);
 }
 
+/**
+ * Extracts a stable command and menu inventory from the Git extension manifest.
+ */
 export function createGitManifestInventory(manifest) {
 	const commandIds = (manifest.contributes?.commands ?? [])
 		.filter(command => command.command?.startsWith('git.'))
@@ -101,6 +110,9 @@ export function createGitManifestInventory(manifest) {
 	};
 }
 
+/**
+ * Classifies a Git command according to the downstream retention policy.
+ */
 export function classifyGitCommand(command) {
 	if (excludedCommands.has(command)) {
 		return 'excluded';
@@ -111,6 +123,9 @@ export function classifyGitCommand(command) {
 	return 'supported';
 }
 
+/**
+ * Compares normalized Git extension inventories.
+ */
 export function diffGitManifestInventories(baseline, candidate) {
 	const baselineCommands = new Set(baseline.commandIds);
 	const candidateCommands = new Set(candidate.commandIds);

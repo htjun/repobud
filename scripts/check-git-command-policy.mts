@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -12,7 +12,7 @@ import {
 	downstreamInventory,
 	excludedCommands,
 	internalCommands,
-} from './git-command-inventory.mjs';
+} from './git-command-inventory.mts';
 
 const repositoryRoot = resolve(import.meta.dirname, '..');
 const manifest = JSON.parse(await readFile(resolve(repositoryRoot, 'extensions/git/package.json'), 'utf8'));

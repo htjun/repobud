@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Repository Context Workbench contributors.
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -7,8 +7,11 @@ import assert from 'node:assert/strict';
 import {
 	createGitManifestInventory,
 	diffGitManifestInventories,
-} from './git-command-inventory.mjs';
+} from './git-command-inventory.mts';
 
+/**
+ * Creates the minimum Git extension manifest needed by inventory tests.
+ */
 function manifest(commands, menus) {
 	return {
 		contributes: {
