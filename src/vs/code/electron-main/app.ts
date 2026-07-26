@@ -71,6 +71,10 @@ import { METERED_CONNECTION_CHANNEL } from '../../platform/meteredConnection/com
 import { MeteredConnectionChannel } from '../../platform/meteredConnection/electron-main/meteredConnectionChannel.js';
 import { MeteredConnectionMainService } from '../../platform/meteredConnection/electron-main/meteredConnectionMainService.js';
 import { IProductService } from '../../platform/product/common/productService.js';
+import { IGitHubCredentialService } from '../../platform/repositoryContext/common/githubCredentialService.js';
+import { IKeychainCredentialService } from '../../platform/repositoryContext/common/keychainCredentialService.js';
+import { GitHubCredentialMainService } from '../../platform/repositoryContext/electron-main/githubCredentialMainService.js';
+import { KeychainCredentialMainService } from '../../platform/repositoryContext/electron-main/keychainCredentialMainService.js';
 import { getRemoteAuthority } from '../../platform/remote/common/remoteHosts.js';
 import { SharedProcess } from '../../platform/sharedProcess/electron-main/sharedProcess.js';
 import { ISignService } from '../../platform/sign/common/sign.js';
@@ -1192,6 +1196,10 @@ export class CodeApplication extends Disposable {
 		// Encryption
 		services.set(IEncryptionMainService, new SyncDescriptor(EncryptionMainService));
 
+		// Repository Context Credentials
+		services.set(IKeychainCredentialService, new SyncDescriptor(KeychainCredentialMainService));
+		services.set(IGitHubCredentialService, new SyncDescriptor(GitHubCredentialMainService));
+
 		// Browser View
 		services.set(IBrowserViewMainService, new SyncDescriptor(BrowserViewMainService, undefined, false /* proxied to other processes */));
 		services.set(IBrowserViewGroupMainService, new SyncDescriptor(BrowserViewGroupMainService, undefined, false /* proxied to other processes */));
@@ -1383,6 +1391,18 @@ export class CodeApplication extends Disposable {
 		// Encryption
 		const encryptionChannel = ProxyChannel.fromService(accessor.get(IEncryptionMainService), disposables);
 		mainProcessElectronServer.registerChannel('encryption', encryptionChannel);
+
+		// Repository Context Credentials
+		const keychainCredentialChannel = ProxyChannel.fromService(
+			accessor.get(IKeychainCredentialService),
+			disposables
+		);
+		mainProcessElectronServer.registerChannel('keychainCredential', keychainCredentialChannel);
+		const githubCredentialChannel = ProxyChannel.fromService(
+			accessor.get(IGitHubCredentialService),
+			disposables
+		);
+		mainProcessElectronServer.registerChannel('githubCredential', githubCredentialChannel);
 
 		// Browser View
 		const browserViewChannel = ProxyChannel.fromService(accessor.get(IBrowserViewMainService), disposables);

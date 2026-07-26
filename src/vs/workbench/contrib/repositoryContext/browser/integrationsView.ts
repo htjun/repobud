@@ -24,6 +24,11 @@ import { IViewDescriptorService } from '../../../common/views.js';
 import { SkillProjectionClient } from '../../../../platform/repositoryContext/common/skillProjection.js';
 import { ICanonicalIntegrationSetting } from '../common/canonicalConfiguration.js';
 import {
+	ConnectionState,
+	IContextConnectionService,
+	IEffectiveConnectionGroup,
+} from '../common/connectionManagement.js';
+import {
 	IEffectiveMcpIntegration,
 	IMcpIntegrationService,
 	IMcpIntegrationSnapshot,
@@ -59,10 +64,19 @@ const clientLabels: Readonly<Record<SkillProjectionClient, string>> = {
 	cursor: 'Cursor',
 };
 
+const connectionStateLabels: Readonly<Record<ConnectionState, string>> = {
+	valid: localize('repositoryContextConnectionStateValid', 'Valid'),
+	expired: localize('repositoryContextConnectionStateExpired', 'Expired'),
+	rejected: localize('repositoryContextConnectionStateRejected', 'Rejected'),
+	missing: localize('repositoryContextConnectionStateMissing', 'Missing'),
+	identityMismatch: localize('repositoryContextConnectionStateIdentityMismatch', 'Identity mismatch'),
+};
+
 export class IntegrationsViewPane extends ViewPane {
 
 	private readonly renderedDisposables = this._register(new DisposableStore());
 	private content: HTMLElement | undefined;
+	private integrationSnapshot: IMcpIntegrationSnapshot;
 
 	constructor(
 		options: IViewletViewOptions,
@@ -76,6 +90,7 @@ export class IntegrationsViewPane extends ViewPane {
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
 		@IMcpIntegrationService private readonly integrationService: IMcpIntegrationService,
+		@IContextConnectionService private readonly connectionService: IContextConnectionService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IDialogService private readonly dialogService: IDialogService,
 		@INotificationService private readonly notificationService: INotificationService,
@@ -92,7 +107,9 @@ export class IntegrationsViewPane extends ViewPane {
 			themeService,
 			hoverService
 		);
+		this.integrationSnapshot = this.integrationService.snapshot;
 		this._register(this.integrationService.onDidChange(snapshot => this.renderSnapshot(snapshot)));
+		this._register(this.connectionService.onDidChange(() => this.renderSnapshot(this.integrationSnapshot)));
 	}
 
 	override shouldShowWelcome(): boolean {
@@ -111,6 +128,7 @@ export class IntegrationsViewPane extends ViewPane {
 		}
 		this.renderedDisposables.clear();
 		dom.clearNode(this.content);
+		this.integrationSnapshot = snapshot;
 		this.renderContextHeader(snapshot);
 
 		if (!snapshot.activeRepository) {
@@ -127,6 +145,10 @@ export class IntegrationsViewPane extends ViewPane {
 		for (const error of snapshot.errors) {
 			const element = dom.append(this.content, dom.$('.repository-context-integrations-error'));
 			element.textContent = error;
+		}
+		if (this.connectionService.snapshot.error) {
+			const element = dom.append(this.content, dom.$('.repository-context-integrations-error'));
+			element.textContent = this.connectionService.snapshot.error;
 		}
 		if (!snapshot.globalRepository) {
 			this.renderGlobalRepositoryPrompt();
@@ -218,6 +240,7 @@ export class IntegrationsViewPane extends ViewPane {
 		}
 		this.renderClients(row, integration);
 		this.renderActivation(row, integration);
+		this.renderConnections(row, integration);
 		this.renderHealth(row, integration);
 		this.renderActions(row, integration);
 	}
@@ -250,8 +273,15 @@ export class IntegrationsViewPane extends ViewPane {
 			reset.type = 'button';
 			reset.textContent = localize('repositoryContextIntegrationUseGlobalClients', 'Use global selection');
 			this.renderedDisposables.add(dom.addDisposableListener(reset, dom.EventType.CLICK, () => {
-				const { activation } = integration.repositoryOverride ?? {};
-				void this.updateOverride(integration, activation ? { activation } : undefined);
+				const { activation, connection } = integration.repositoryOverride ?? {};
+				const setting = {
+					...(activation ? { activation } : {}),
+					...(connection ? { connection } : {}),
+				};
+				void this.updateOverride(
+					integration,
+					Object.keys(setting).length > 0 ? setting : undefined
+				);
 			}));
 		}
 		const projections = dom.append(row, dom.$('.repository-context-integration-projections'));
@@ -326,14 +356,162 @@ export class IntegrationsViewPane extends ViewPane {
 			button.setAttribute('aria-pressed', String(current === value));
 			button.classList.toggle('selected', current === value);
 			this.renderedDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, () => {
-				const clients = integration.repositoryOverride?.clients;
+				const { clients, connection } = integration.repositoryOverride ?? {};
 				void this.updateOverride(
 					integration,
 					value === 'inherit'
-						? clients ? { clients } : undefined
-						: { ...(clients ? { clients } : {}), activation: value }
+						? clients || connection ? {
+							...(clients ? { clients } : {}),
+							...(connection ? { connection } : {}),
+						} : undefined
+						: {
+							...(clients ? { clients } : {}),
+							...(connection ? { connection } : {}),
+							activation: value,
+						}
 				);
 			}));
+		}
+	}
+
+	private renderConnections(row: HTMLElement, integration: IEffectiveMcpIntegration): void {
+		if (integration.definition?.connection?.provider !== 'github') {
+			return;
+		}
+		const container = dom.append(row, dom.$('.repository-context-integration-connections'));
+		dom.append(container, dom.$('h4')).textContent =
+			localize('repositoryContextGitHubConnections', 'GitHub Connections');
+		const group = this.connectionService.snapshot.groups.find(
+			candidate => candidate.integrationId === integration.id
+		);
+		if (!group) {
+			dom.append(container, dom.$('.repository-context-integration-connection-detail')).textContent =
+				this.connectionService.snapshot.loading
+					? localize('repositoryContextConnectionsLoading', 'Loading Connections...')
+					: localize('repositoryContextConnectionsUnavailable', 'Connections are unavailable.');
+			return;
+		}
+		if (group.issue) {
+			const issue = dom.append(
+				container,
+				dom.$(`.repository-context-integration-connection-issue.${group.state}`)
+			);
+			issue.textContent = group.issue;
+		}
+		for (const connection of group.connections) {
+			this.renderConnection(container, integration, group, connection);
+		}
+		const actions = dom.append(container, dom.$('.repository-context-integration-connection-actions'));
+		this.renderAction(
+			actions,
+			localize('repositoryContextAddGitHubConnection', 'Connect GitHub account'),
+			() => this.addGitHubConnection(integration)
+		);
+		if (group.selectionSource === 'repository') {
+			this.renderAction(
+				actions,
+				localize('repositoryContextUseGlobalConnection', 'Use global default'),
+				() => this.connectionService.setRepositoryConnection(integration.id, undefined)
+			);
+		}
+	}
+
+	private renderConnection(
+		container: HTMLElement,
+		integration: IEffectiveMcpIntegration,
+		group: IEffectiveConnectionGroup,
+		connection: IEffectiveConnectionGroup['connections'][number],
+	): void {
+		const row = dom.append(container, dom.$('.repository-context-integration-connection'));
+		const summary = dom.append(row, dom.$('.repository-context-integration-connection-summary'));
+		const label = dom.append(summary, dom.$('.repository-context-integration-connection-label'));
+		label.textContent = connection.accountLabel;
+		const state = dom.append(
+			summary,
+			dom.$(`span.repository-context-integration-connection-state.${connection.state}`)
+		);
+		state.textContent = connectionStateLabels[connection.state];
+		const detail = dom.append(row, dom.$('.repository-context-integration-connection-detail'));
+		detail.textContent = connection.scopes.length > 0
+			? localize(
+				'repositoryContextGitHubConnectionScopes',
+				'{0} · Scopes: {1}',
+				connection.tenant,
+				connection.scopes.join(', ')
+			)
+			: connection.tenant;
+		const actions = dom.append(row, dom.$('.repository-context-integration-connection-actions'));
+		if (
+			group.selectedConnectionId !== connection.id ||
+			group.selectionSource !== 'repository'
+		) {
+			this.renderAction(
+				actions,
+				localize('repositoryContextUseConnectionForRepository', 'Use for repository'),
+				() => this.connectionService.setRepositoryConnection(integration.id, connection.id)
+			);
+		} else {
+			dom.append(actions, dom.$('.repository-context-integration-connection-selected')).textContent =
+				localize('repositoryContextConnectionSelectedForRepository', 'Selected for repository');
+		}
+		if (
+			group.selectedConnectionId !== connection.id ||
+			group.selectionSource !== 'global'
+		) {
+			this.renderAction(
+				actions,
+				localize('repositoryContextSetGlobalConnection', 'Set global default'),
+				() => this.connectionService.setGlobalConnection(integration.id, connection.id)
+			);
+		}
+		this.renderAction(
+			actions,
+			localize('repositoryContextValidateConnection', 'Validate'),
+			() => this.connectionService.validateConnection(connection.id)
+		);
+		this.renderAction(
+			actions,
+			localize('repositoryContextDisconnectConnection', 'Disconnect'),
+			() => this.confirmDisconnect(connection.id, connection.accountLabel)
+		);
+	}
+
+	private async addGitHubConnection(integration: IEffectiveMcpIntegration): Promise<void> {
+		const result = await this.dialogService.input({
+			type: 'info',
+			message: localize('repositoryContextConnectGitHubAccount', 'Connect a GitHub account'),
+			detail: localize(
+				'repositoryContextConnectGitHubAccountDetail',
+				'Enter a GitHub token. It will be validated against GitHub and stored in macOS Keychain. It will not be written to either Git repository.'
+			),
+			inputs: [{
+				type: 'password',
+				placeholder: localize('repositoryContextGitHubTokenPlaceholder', 'GitHub token'),
+			}],
+			primaryButton: localize('repositoryContextConnectGitHubPrimaryButton', 'Connect'),
+		});
+		const token = result.values?.[0];
+		if (result.confirmed && token) {
+			await this.connectionService.addGitHubConnection(integration.id, token);
+		}
+	}
+
+	private async confirmDisconnect(id: string, accountLabel: string): Promise<void> {
+		const result = await this.dialogService.confirm({
+			type: 'warning',
+			message: localize(
+				'repositoryContextConfirmDisconnectConnection',
+				'Disconnect GitHub account "{0}"?',
+				accountLabel
+			),
+			detail: localize(
+				'repositoryContextConfirmDisconnectConnectionDetail',
+				'The credential will be removed from macOS Keychain. The Integration, Plugin, and portable connection reference will not be deleted.'
+			),
+			primaryButton: localize('repositoryContextDisconnectPrimaryButton', 'Disconnect'),
+		});
+		if (result.confirmed) {
+			await this.connectionService.disconnect(id);
 		}
 	}
 

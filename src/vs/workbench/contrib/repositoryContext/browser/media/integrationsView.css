@@ -256,6 +256,78 @@
 	opacity: 0.7;
 }
 
+.repository-context-integration-connections {
+	border-top: 1px solid var(--vscode-sideBarSectionHeader-border);
+	margin-top: var(--vscode-spacing-size100);
+	padding-top: var(--vscode-spacing-size80);
+}
+
+.repository-context-integration-connections h4 {
+	font-size: var(--vscode-fontSize-label2);
+	margin: 0 0 var(--vscode-spacing-size80);
+}
+
+.repository-context-integration-connection {
+	background: var(--vscode-editorWidget-background);
+	border-radius: var(--vscode-cornerRadius-small);
+	margin-top: var(--vscode-spacing-size60);
+	padding: var(--vscode-spacing-size80);
+}
+
+.repository-context-integration-connection-summary {
+	align-items: center;
+	display: flex;
+	justify-content: space-between;
+}
+
+.repository-context-integration-connection-label {
+	font-weight: var(--vscode-fontWeight-semiBold);
+}
+
+.repository-context-integration-connection-state {
+	border: 1px solid var(--vscode-descriptionForeground);
+	border-radius: var(--vscode-cornerRadius-large);
+	font-size: 9px;
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+	text-transform: uppercase;
+}
+
+.repository-context-integration-connection-state.valid {
+	border-color: var(--vscode-testing-iconPassed);
+	color: var(--vscode-testing-iconPassed);
+}
+
+.repository-context-integration-connection-state.expired,
+.repository-context-integration-connection-state.rejected,
+.repository-context-integration-connection-state.missing,
+.repository-context-integration-connection-state.identityMismatch {
+	border-color: var(--vscode-testing-iconFailed);
+	color: var(--vscode-testing-iconFailed);
+}
+
+.repository-context-integration-connection-detail,
+.repository-context-integration-connection-selected {
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-fontSize-label3);
+	margin-top: var(--vscode-spacing-size40);
+}
+
+.repository-context-integration-connection-issue {
+	border-left: 2px solid var(--vscode-testing-iconFailed);
+	color: var(--vscode-testing-iconFailed);
+	font-size: var(--vscode-fontSize-label2);
+	padding-left: var(--vscode-spacing-size60);
+}
+
+.repository-context-integration-connection-actions {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--vscode-spacing-size40);
+	justify-content: flex-end;
+	margin-top: var(--vscode-spacing-size60);
+}
+
 .repository-context-integration-overrides {
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);

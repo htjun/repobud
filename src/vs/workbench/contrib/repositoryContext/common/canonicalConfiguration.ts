@@ -22,6 +22,7 @@ export interface ICanonicalCapabilitySetting {
 export interface ICanonicalIntegrationSetting {
 	readonly activation?: CanonicalActivation;
 	readonly clients?: readonly SkillProjectionClient[];
+	readonly connection?: string;
 }
 
 export interface ICanonicalConfiguration {
@@ -105,7 +106,7 @@ function parseIntegrationSettings(
 		if (!isRecord(setting)) {
 			throw new Error(`${context}.${id} must be an object.`);
 		}
-		assertExactKeys(setting, ['activation', 'clients'], `${context}.${id}`);
+		assertExactKeys(setting, ['activation', 'clients', 'connection'], `${context}.${id}`);
 		if (setting.activation !== undefined && setting.activation !== 'on' && setting.activation !== 'off') {
 			throw new Error(`${context}.${id}.activation must be "on" or "off".`);
 		}
@@ -116,12 +117,24 @@ function parseIntegrationSettings(
 		)) {
 			throw new Error(`${context}.${id}.clients must contain unique supported client IDs.`);
 		}
-		if (setting.activation === undefined && setting.clients === undefined) {
-			throw new Error(`${context}.${id} must override activation or clients.`);
+		if (
+			setting.connection !== undefined &&
+			(typeof setting.connection !== 'string' ||
+				!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(setting.connection))
+		) {
+			throw new Error(`${context}.${id}.connection must be an opaque Connection ID.`);
+		}
+		if (
+			setting.activation === undefined &&
+			setting.clients === undefined &&
+			setting.connection === undefined
+		) {
+			throw new Error(`${context}.${id} must override activation, clients, or connection.`);
 		}
 		result[id] = {
 			...(setting.activation ? { activation: setting.activation } : {}),
 			...(setting.clients ? { clients: setting.clients as SkillProjectionClient[] } : {}),
+			...(setting.connection ? { connection: setting.connection } : {}),
 		};
 	}
 	return result;

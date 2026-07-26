@@ -5,10 +5,12 @@
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { appendFile, chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
-import { join } from 'node:path';
+import { createServer as createHttpServer } from 'node:http';
+import { createServer as createTcpServer } from 'node:net';
+import { basename, join } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -60,7 +62,7 @@ async function waitFor(predicate, message) {
 }
 
 async function reservePort() {
-	const server = createServer();
+	const server = createTcpServer();
 	await new Promise((resolve, reject) => {
 		server.once('error', reject);
 		server.listen(0, '127.0.0.1', resolve);
@@ -70,6 +72,84 @@ async function reservePort() {
 	const port = address.port;
 	await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
 	return port;
+}
+
+async function startGitHubFixtureServer(tokens) {
+	const requests = [];
+	const accounts = new Map([
+		[tokens.alpha, { id: 101, login: 'alpha' }],
+		[tokens.beta, { id: 202, login: 'beta' }],
+		[tokens.betaReconnected, { id: 202, login: 'beta-renamed' }],
+	]);
+	const server = createHttpServer((request, response) => {
+		const authorization = request.headers.authorization ?? '';
+		const account = accounts.get(authorization.replace(/^Bearer /, ''));
+		requests.push({
+			url: request.url,
+			apiVersion: request.headers['x-github-api-version'],
+			userAgent: request.headers['user-agent'],
+			hasAuthorization: authorization.startsWith('Bearer '),
+		});
+		if (request.url !== '/user' || !account) {
+			response.writeHead(401);
+			response.end();
+			return;
+		}
+		response.writeHead(200, {
+			'content-type': 'application/json',
+			'x-oauth-scopes': 'read:user, repo',
+		});
+		response.end(JSON.stringify(account));
+	});
+	await new Promise((resolve, reject) => {
+		server.once('error', reject);
+		server.listen(0, '127.0.0.1', resolve);
+	});
+	const address = server.address();
+	assert.ok(address && typeof address === 'object');
+	return {
+		server,
+		requests,
+		url: `http://127.0.0.1:${address.port}/user`,
+	};
+}
+
+async function assertTreeExcludes(root, excludedValues) {
+	let entries;
+	try {
+		entries = await readdir(root, { withFileTypes: true });
+	} catch (error) {
+		if (error?.code === 'ENOENT') {
+			return;
+		}
+		throw error;
+	}
+	for (const entry of entries) {
+		const path = join(root, entry.name);
+		if (entry.isDirectory()) {
+			await assertTreeExcludes(path, excludedValues);
+			continue;
+		}
+		if (!entry.isFile()) {
+			continue;
+		}
+		let content;
+		try {
+			content = await readFile(path);
+		} catch (error) {
+			if (error?.code === 'ENOENT') {
+				continue;
+			}
+			throw error;
+		}
+		for (const excludedValue of excludedValues) {
+			assert.equal(
+				content.includes(Buffer.from(excludedValue)),
+				false,
+				`Secret material was persisted in ${path}.`
+			);
+		}
+	}
 }
 
 async function waitForCdp(port, child) {
@@ -125,6 +205,7 @@ async function main() {
 	let browser;
 	let child;
 	let page;
+	let githubFixture;
 
 	try {
 		await Promise.all([
@@ -218,6 +299,9 @@ async function main() {
 					type: 'http',
 					url: 'https://example.invalid/mcp',
 				},
+				connection: {
+					provider: 'github',
+				},
 			}),
 			writeFile(join(fixturePath, '.repository-context', 'config.json'), [
 				'{',
@@ -278,7 +362,14 @@ async function main() {
 		runGit(fixturePath, ['add', 'staged.txt']);
 		runGit(fixturePath, ['mv', 'rename-old.txt', 'rename-new.txt']);
 
+		const fixtureTokens = {
+			alpha: randomBytes(24).toString('hex'),
+			beta: randomBytes(24).toString('hex'),
+			betaReconnected: randomBytes(24).toString('hex'),
+		};
+		githubFixture = await startGitHubFixtureServer(fixtureTokens);
 		const cdpPort = await reservePort();
+		const keychainNamespace = basename(temporaryRoot);
 		child = spawn(executablePath, [
 			`--user-data-dir=${userDataPath}`,
 			`--extensions-dir=${extensionsPath}`,
@@ -288,7 +379,12 @@ async function main() {
 			'--use-mock-keychain',
 			`--folder-uri=${pathToFileURL(fixturePath).toString()}`,
 		], {
-			env: { ...process.env, TMPDIR: temporaryRoot },
+			env: {
+				...process.env,
+				TMPDIR: temporaryRoot,
+				REPOSITORY_CONTEXT_GITHUB_USER_URL: githubFixture.url,
+				REPOSITORY_CONTEXT_KEYCHAIN_NAMESPACE: keychainNamespace,
+			},
 			stdio: ['ignore', 'pipe', 'pipe'],
 		});
 		child.stdout.on('data', chunk => applicationLog.push(chunk.toString()));
@@ -516,6 +612,102 @@ async function main() {
 		assert.match(await remoteIntegration.innerText(), /Remote endpoint/i);
 		assert.match(await remoteIntegration.innerText(), /Repository/i);
 		assert.match(await remoteIntegration.innerText(), /Not checked/);
+		assert.match(await remoteIntegration.innerText(), /Connect a GitHub account/i);
+
+		const connectGitHubAccount = async token => {
+			await remoteIntegration.getByRole('button', { name: 'Connect GitHub account' }).click();
+			const dialog = page.getByRole('dialog').filter({ hasText: 'Connect a GitHub account' });
+			await dialog.waitFor();
+			await dialog.getByPlaceholder('GitHub token').fill(token);
+			await dialog.getByRole('button', { name: 'Connect' }).click();
+		};
+		await connectGitHubAccount(fixtureTokens.alpha);
+		const alphaConnection = remoteIntegration
+			.locator('.repository-context-integration-connection')
+			.filter({ hasText: 'alpha' });
+		await alphaConnection.getByText('Valid', { exact: true }).waitFor();
+		await remoteIntegration.getByRole('button', { name: 'Validate' }).click();
+		await alphaConnection.getByText('Valid', { exact: true }).waitFor();
+
+		await connectGitHubAccount(fixtureTokens.beta);
+		const betaConnection = remoteIntegration
+			.locator('.repository-context-integration-connection')
+			.filter({ hasText: 'beta' });
+		await betaConnection.getByText('Valid', { exact: true }).waitFor();
+		await remoteIntegration.getByText(
+			'Choose which GitHub account this repository should use.',
+			{ exact: true }
+		).waitFor();
+		await alphaConnection.getByRole('button', { name: 'Set global default' }).click();
+		await betaConnection.getByRole('button', { name: 'Use for repository' }).click();
+		await betaConnection.getByText('Selected for repository', { exact: true }).waitFor();
+
+		const repositoryConnectionsConfiguration = JSON.parse(await readFile(
+			join(fixturePath, '.repository-context', 'config.json'),
+			'utf8'
+		));
+		const globalConnectionsConfiguration = JSON.parse(await readFile(
+			existingConfigurationFile,
+			'utf8'
+		));
+		const repositoryConnectionRef =
+			repositoryConnectionsConfiguration.integrations['remote-docs'].connection;
+		const globalConnectionRef =
+			globalConnectionsConfiguration.integrations['remote-docs'].connection;
+		assert.match(repositoryConnectionRef, /^conn_[a-f0-9]{32}$/);
+		assert.match(globalConnectionRef, /^conn_[a-f0-9]{32}$/);
+		assert.notEqual(repositoryConnectionRef, globalConnectionRef);
+
+		await betaConnection.getByRole('button', { name: 'Disconnect' }).click();
+		const disconnectDialog = page.getByRole('dialog').filter({
+			hasText: 'Disconnect GitHub account "beta"?',
+		});
+		await disconnectDialog.waitFor();
+		await disconnectDialog.getByRole('button', { name: 'Disconnect' }).click();
+		await betaConnection.getByText('Missing', { exact: true }).waitFor();
+		assert.match(await remoteIntegration.innerText(), /Remote docs/);
+		assert.equal(
+			JSON.parse(await readFile(
+				join(fixturePath, '.repository-context', 'config.json'),
+				'utf8'
+			)).integrations['remote-docs'].connection,
+			repositoryConnectionRef
+		);
+
+		await connectGitHubAccount(fixtureTokens.betaReconnected);
+		const renamedBetaConnection = remoteIntegration
+			.locator('.repository-context-integration-connection')
+			.filter({ hasText: 'beta-renamed' });
+		await renamedBetaConnection.getByText('Valid', { exact: true }).waitFor();
+		assert.equal(
+			JSON.parse(await readFile(
+				join(fixturePath, '.repository-context', 'config.json'),
+				'utf8'
+			)).integrations['remote-docs'].connection,
+			repositoryConnectionRef
+		);
+
+		assert.ok(githubFixture.requests.length >= 4);
+		assert.ok(githubFixture.requests.every(request => request.url === '/user'));
+		assert.ok(githubFixture.requests.every(request => request.apiVersion === '2026-03-10'));
+		assert.ok(githubFixture.requests.every(
+			request => request.userAgent?.startsWith('Repository-Context-Workbench/')
+		));
+		assert.ok(githubFixture.requests.every(request => request.hasAuthorization));
+		const fixtureSecrets = Object.values(fixtureTokens);
+		await assertTreeExcludes(fixturePath, fixtureSecrets);
+		await assertTreeExcludes(existingConfigurationPath, fixtureSecrets);
+		await assertTreeExcludes(userDataPath, fixtureSecrets);
+		assert.ok(fixtureSecrets.every(secret => !applicationLog.join('').includes(secret)));
+
+		await renamedBetaConnection.getByRole('button', { name: 'Disconnect' }).click();
+		await page.getByRole('dialog').filter({
+			hasText: 'Disconnect GitHub account "beta-renamed"?',
+		}).getByRole('button', { name: 'Disconnect' }).click();
+		await alphaConnection.getByRole('button', { name: 'Disconnect' }).click();
+		await page.getByRole('dialog').filter({
+			hasText: 'Disconnect GitHub account "alpha"?',
+		}).getByRole('button', { name: 'Disconnect' }).click();
 
 		await localIntegration.getByRole('button', { name: 'Project' }).click();
 		await waitFor(
@@ -575,7 +767,7 @@ async function main() {
 		await page.getByRole('treeitem', { name: /^unstaged\.txt, Modified/ }).click();
 		await page.locator('.monaco-diff-editor').waitFor();
 		assert.match(await page.getByRole('main').innerText(), /unstaged\.txt \(Working Tree\)/);
-		const diffEditorAutocompleteModes = await page.locator('.monaco-diff-editor .native-edit-context')
+		const diffEditorAutocompleteModes = await page.locator('.monaco-diff-editor [role="textbox"]')
 			.evaluateAll(editors => editors.map(editor => editor.getAttribute('aria-autocomplete')));
 		assert.ok(diffEditorAutocompleteModes.length >= 2, 'Expected both sides of the diff editor.');
 		assert.ok(
@@ -829,6 +1021,9 @@ async function main() {
 		throw error;
 	} finally {
 		await browser?.close().catch(() => undefined);
+		if (githubFixture) {
+			await new Promise(resolve => githubFixture.server.close(resolve));
+		}
 		if (child) {
 			await stopApplication(child);
 		}

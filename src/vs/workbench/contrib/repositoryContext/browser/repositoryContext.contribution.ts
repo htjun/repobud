@@ -26,6 +26,7 @@ import { REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS, REPOSITORY_CONTEXT_VIEW_IDS, isR
 import { IRepositoryCatalogService } from '../common/repositoryCatalog.js';
 import './canonicalConfigurationActions.js';
 import './canonicalConfigurationService.js';
+import './contextConnectionService.js';
 import './contextMcpIntegrationService.js';
 import './contextSkillService.js';
 import './repositoryCatalogActions.js';

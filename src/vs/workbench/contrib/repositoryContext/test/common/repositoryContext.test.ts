@@ -171,12 +171,14 @@ suite('Canonical Configuration', () => {
 				'local-tools': {
 					activation: 'off',
 					clients: ['codex', 'cursor'],
+					connection: 'github:123:machine-reference',
 				},
 			},
 		}), 'repository');
 		assert.deepStrictEqual(configuration.integrations['local-tools'], {
 			activation: 'off',
 			clients: ['codex', 'cursor'],
+			connection: 'github:123:machine-reference',
 		});
 		assert.throws(
 			() => parseCanonicalConfiguration(JSON.stringify({
@@ -186,6 +188,15 @@ suite('Canonical Configuration', () => {
 				},
 			})),
 			/unique supported client IDs/
+		);
+		assert.throws(
+			() => parseCanonicalConfiguration(JSON.stringify({
+				...createCanonicalConfiguration('repository'),
+				integrations: {
+					'local-tools': { connection: '/Users/example/secret' },
+				},
+			})),
+			/must be an opaque Connection ID/
 		);
 	});
 });
@@ -296,10 +307,14 @@ suite('MCP Integration', () => {
 
 	test('keeps stdio and HTTP definitions distinct and portable', () => {
 		const local = parseCanonicalMcpDefinition(serializeCanonicalMcpDefinition(localResource.definition!));
-		const remote = parseCanonicalMcpDefinition(serializeCanonicalMcpDefinition(remoteResource.definition!));
+		const remote = parseCanonicalMcpDefinition(serializeCanonicalMcpDefinition({
+			...remoteResource.definition!,
+			connection: { provider: 'github' },
+		}));
 
 		assert.strictEqual(local.transport.type, 'stdio');
 		assert.strictEqual(remote.transport.type, 'http');
+		assert.deepStrictEqual(remote.connection, { provider: 'github' });
 		assert.doesNotMatch(serializeCanonicalMcpDefinition(local), /token|secret|header/i);
 	});
 
@@ -347,6 +362,13 @@ suite('MCP Integration', () => {
 				},
 			})),
 			/must not contain credentials, query parameters, or fragments/
+		);
+		assert.throws(
+			() => parseCanonicalMcpDefinition(JSON.stringify({
+				...remoteResource.definition,
+				connection: { provider: 'unsupported', token: 'secret' },
+			})),
+			/unsupported fields: token/
 		);
 	});
 

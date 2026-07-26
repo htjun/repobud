@@ -39,6 +39,9 @@ export interface ICanonicalMcpDefinition {
 	readonly name: string;
 	readonly description: string;
 	readonly transport: ICanonicalMcpTransport;
+	readonly connection?: {
+		readonly provider: 'github';
+	};
 }
 
 export interface IDiscoveredMcpHealth {
@@ -136,7 +139,7 @@ export function parseCanonicalMcpDefinition(raw: string, expectedId?: string): I
 	if (!isRecord(value)) {
 		throw new Error('MCP definition must be an object.');
 	}
-	assertExactKeys(value, ['version', 'id', 'name', 'description', 'transport'], 'MCP definition');
+	assertExactKeys(value, ['version', 'id', 'name', 'description', 'transport', 'connection'], 'MCP definition');
 	if (value.version !== 1) {
 		throw new Error('MCP definition version must be 1.');
 	}
@@ -154,6 +157,15 @@ export function parseCanonicalMcpDefinition(raw: string, expectedId?: string): I
 	}
 	if (!isRecord(value.transport)) {
 		throw new Error('MCP definition transport must be an object.');
+	}
+	if (value.connection !== undefined) {
+		if (!isRecord(value.connection)) {
+			throw new Error('MCP definition connection must be an object.');
+		}
+		assertExactKeys(value.connection, ['provider'], 'MCP definition connection');
+		if (value.connection.provider !== 'github') {
+			throw new Error('MCP definition connection provider must be "github".');
+		}
 	}
 
 	let transport: ICanonicalMcpTransport;
@@ -206,6 +218,7 @@ export function parseCanonicalMcpDefinition(raw: string, expectedId?: string): I
 		name: value.name.trim(),
 		description: value.description.trim(),
 		transport,
+		...(value.connection ? { connection: { provider: 'github' as const } } : {}),
 	};
 }
 
