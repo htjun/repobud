@@ -141,6 +141,11 @@ import { NativeMcpDiscoveryHelperService } from '../../platform/mcp/node/nativeM
 import { IMcpGatewayService, McpGatewayChannelName } from '../../platform/mcp/common/mcpGateway.js';
 import { McpGatewayService } from '../../platform/mcp/node/mcpGatewayService.js';
 import { McpGatewayChannel } from '../../platform/mcp/node/mcpGatewayChannel.js';
+import {
+	IRepositoryContextSkillProjectionService,
+	REPOSITORY_CONTEXT_SKILL_PROJECTION_CHANNEL,
+} from '../../platform/repositoryContext/common/skillProjection.js';
+import { RepositoryContextSkillProjectionMainService } from '../../platform/repositoryContext/electron-main/skillProjectionMainService.js';
 import { IWebContentExtractorService } from '../../platform/webContentExtractor/common/webContentExtractor.js';
 import { NativeWebContentExtractorService } from '../../platform/webContentExtractor/electron-main/webContentExtractorService.js';
 import { AgentNetworkFilterService, IAgentNetworkFilterService } from '../../platform/networkFilter/common/networkFilterService.js';
@@ -1293,6 +1298,12 @@ export class CodeApplication extends Disposable {
 		services.set(INativeMcpDiscoveryHelperService, new SyncDescriptor(NativeMcpDiscoveryHelperService));
 		services.set(IMcpGatewayService, new SyncDescriptor(McpGatewayService));
 
+		// Repository Context
+		services.set(
+			IRepositoryContextSkillProjectionService,
+			new SyncDescriptor(RepositoryContextSkillProjectionMainService)
+		);
+
 		// Dev Only: CSS service (for ESM)
 		services.set(ICSSDevelopmentService, new SyncDescriptor(CSSDevelopmentService, undefined, true));
 
@@ -1432,6 +1443,15 @@ export class CodeApplication extends Disposable {
 		// MCP
 		const mcpDiscoveryChannel = ProxyChannel.fromService(accessor.get(INativeMcpDiscoveryHelperService), disposables);
 		mainProcessElectronServer.registerChannel(NativeMcpDiscoveryHelperChannelName, mcpDiscoveryChannel);
+
+		const repositoryContextSkillProjectionChannel = ProxyChannel.fromService(
+			accessor.get(IRepositoryContextSkillProjectionService),
+			disposables
+		);
+		mainProcessElectronServer.registerChannel(
+			REPOSITORY_CONTEXT_SKILL_PROJECTION_CHANNEL,
+			repositoryContextSkillProjectionChannel
+		);
 		const mcpGatewayChannel = this._register(new McpGatewayChannel(mainProcessElectronServer, accessor.get(IMcpGatewayService), accessor.get(ILoggerMainService)));
 		mainProcessElectronServer.registerChannel(McpGatewayChannelName, mcpGatewayChannel);
 
