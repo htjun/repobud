@@ -5,9 +5,10 @@
 
 import 'mocha';
 import assert from 'assert';
-import { workspace, commands, window, Uri, extensions, TabInputTextDiff } from 'vscode';
+import { workspace, commands, window, Uri, extensions, TabInputTextDiff, ConfigurationTarget } from 'vscode';
 import * as cp from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type { GitExtension, API, Repository } from '../api/git';
 import { Status } from '../api/git.constants';
@@ -15,6 +16,7 @@ import { eventToPromise } from '../util';
 
 suite('git smoke test', function () {
 	const cwd = workspace.workspaceFolders![0].uri.fsPath;
+	const temporaryPaths: string[] = [];
 
 	function file(relativePath: string) {
 		return path.join(cwd, relativePath);
@@ -52,6 +54,12 @@ suite('git smoke test', function () {
 		assert.strictEqual(git.repositories[0].rootUri.fsPath, cwd);
 
 		repository = git.repositories[0];
+	});
+
+	suiteTeardown(() => {
+		for (const temporaryPath of temporaryPaths) {
+			fs.rmSync(temporaryPath, { force: true, recursive: true });
+		}
 	});
 
 	test('reflects working tree changes', async function () {
@@ -129,6 +137,95 @@ suite('git smoke test', function () {
 
 		assert.strictEqual(repository.state.workingTreeChanges.length, 0);
 		assert.strictEqual(repository.state.indexChanges.length, 0);
+	});
+
+	test('supports commit variants, branches, tags, stashes, worktrees and remotes', async function () {
+		assert.strictEqual(fs.realpathSync(git.git.path), fs.realpathSync(cp.execFileSync('which', ['git'], { encoding: 'utf8' }).trim()));
+
+		await repository.createBranch('operations', true);
+		assert.strictEqual(repository.state.HEAD?.name, 'operations');
+		fs.appendFileSync(file('app.js'), ' operations');
+		await repository.commit('operations commit', { all: true, signoff: true });
+		assert.match(cp.execSync('git log -1 --pretty=%B', { cwd, encoding: 'utf8' }), /Signed-off-by: testuser/);
+
+		fs.appendFileSync(file('app.js'), ' amended');
+		await repository.add([file('app.js')]);
+		const commitBeforeAmend = cp.execSync('git rev-parse HEAD', { cwd, encoding: 'utf8' }).trim();
+		await repository.commit('operations amended', { amend: true });
+		assert.notStrictEqual(cp.execSync('git rev-parse HEAD', { cwd, encoding: 'utf8' }).trim(), commitBeforeAmend);
+		assert.strictEqual(cp.execSync('git log -1 --pretty=%s', { cwd, encoding: 'utf8' }).trim(), 'operations amended');
+
+		await repository.commit('operations empty', { empty: true });
+		assert.strictEqual(cp.execSync('git log -1 --pretty=%s', { cwd, encoding: 'utf8' }).trim(), 'operations empty');
+
+		await repository.checkout('main');
+		fs.appendFileSync(file('index.pug'), ' main');
+		await repository.commit('main operations', { all: true });
+		await repository.checkout('operations');
+		await repository.rebase('main');
+		assert.strictEqual(repository.state.HEAD?.name, 'operations');
+
+		await repository.tag('operations-tag', 'Operations tag');
+		assert.match(cp.execSync('git tag --list operations-tag', { cwd, encoding: 'utf8' }), /operations-tag/);
+		await repository.deleteTag('operations-tag');
+		assert.strictEqual(cp.execSync('git tag --list operations-tag', { cwd, encoding: 'utf8' }).trim(), '');
+
+		fs.appendFileSync(file('app.js'), ' stash');
+		await repository.createStash({ message: 'operations stash' });
+		assert.strictEqual(repository.state.workingTreeChanges.length, 0);
+		await repository.applyStash(0);
+		await repository.status();
+		assert.strictEqual(repository.state.workingTreeChanges.length, 1);
+		await repository.restore([file('app.js')], { ref: 'HEAD' });
+		await repository.popStash(0);
+		await repository.status();
+		assert.strictEqual(repository.state.workingTreeChanges.length, 1);
+		await repository.commit('stash restored', { all: true });
+
+		fs.appendFileSync(file('app.js'), ' drop');
+		await repository.createStash({ message: 'drop stash' });
+		await repository.dropStash(0);
+		assert.strictEqual(cp.execSync('git stash list', { cwd, encoding: 'utf8' }).trim(), '');
+
+		const worktreePath = fs.mkdtempSync(path.join(os.tmpdir(), 'repository-context-worktree-'));
+		fs.rmdirSync(worktreePath);
+		temporaryPaths.push(worktreePath);
+		await repository.createWorktree({ path: worktreePath, branch: 'worktree-branch', commitish: 'main' });
+		assert.ok(fs.existsSync(path.join(worktreePath, '.git')));
+		await repository.deleteWorktree(worktreePath);
+		assert.strictEqual(fs.existsSync(worktreePath), false);
+
+		await repository.checkout('main');
+		const remoteRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'repository-context-remote-'));
+		temporaryPaths.push(remoteRoot);
+		const remotePath = path.join(remoteRoot, 'remote.git');
+		cp.execFileSync('git', ['init', '--bare', remotePath]);
+		await repository.addRemote('origin', remotePath);
+		await commands.executeCommand('git.publish', repository.rootUri);
+		await repository.status();
+		assert.strictEqual(repository.state.HEAD?.upstream?.remote, 'origin');
+
+		const peerPath = path.join(remoteRoot, 'peer');
+		cp.execFileSync('git', ['clone', remotePath, peerPath]);
+		cp.execFileSync('git', ['config', 'user.name', 'peer'], { cwd: peerPath });
+		cp.execFileSync('git', ['config', 'user.email', 'peer@example.com'], { cwd: peerPath });
+		fs.writeFileSync(path.join(peerPath, 'peer.txt'), 'peer');
+		cp.execFileSync('git', ['add', 'peer.txt'], { cwd: peerPath });
+		cp.execFileSync('git', ['commit', '-m', 'peer change'], { cwd: peerPath });
+		cp.execFileSync('git', ['push'], { cwd: peerPath });
+		await repository.pull();
+		assert.strictEqual(fs.readFileSync(file('peer.txt'), 'utf8'), 'peer');
+
+		fs.appendFileSync(file('index.pug'), ' local');
+		await repository.commit('local push', { all: true });
+		await repository.push();
+		await repository.fetch({ remote: 'origin', prune: true });
+		await workspace.getConfiguration('git').update('confirmSync', false, ConfigurationTarget.Global);
+		await commands.executeCommand('git.sync', repository.rootUri);
+		assert.strictEqual(
+			cp.execFileSync('git', ['--git-dir', remotePath, 'log', '-1', '--pretty=%s'], { encoding: 'utf8' }).trim(),
+			'local push'
+		);
 	});
 
 	test('rename/delete conflict', async function () {

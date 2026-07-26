@@ -9,7 +9,7 @@ import { Command, commands, Disposable, MessageOptions, Position, QuickPickItem,
 import TelemetryReporter from '@vscode/extension-telemetry';
 import type { CommitOptions, RemoteSourcePublisher, Remote, Branch, Ref } from './api/git';
 import { ForcePushMode, GitErrorCodes, RefType, Status } from './api/git.constants';
-import { Git, GitError, Repository as GitRepository, Stash, Worktree } from './git';
+import { Git, GitError, redactGitSecrets, Repository as GitRepository, Stash, Worktree } from './git';
 import { Model } from './model';
 import { GitResourceGroup, Repository, Resource, ResourceGroupType } from './repository';
 import { DiffEditorSelectionHunkToolbarContext, LineChange, applyLineChanges, getIndexDiffInformation, getModifiedRange, getWorkingTreeDiffInformation, intersectDiffWithRange, invertLineChange, toLineChanges, toLineRanges, compareLineChanges } from './staging';
@@ -265,6 +265,10 @@ class WorktreeDeleteItem extends WorktreeItem {
 
 	async run(mainRepository: Repository): Promise<void> {
 		if (!this.worktree.path) {
+			return;
+		}
+
+		if (!await confirmWorktreeDeletion(this.worktree)) {
 			return;
 		}
 
@@ -641,6 +645,87 @@ function getCheckoutRefProcessor(repository: Repository, type: string): RefProce
 function getRepositoryLabel(repositoryRoot: string): string {
 	const workspaceFolder = workspace.getWorkspaceFolder(Uri.file(repositoryRoot));
 	return workspaceFolder?.uri.toString() === repositoryRoot ? workspaceFolder.name : path.basename(repositoryRoot);
+}
+
+async function confirmImpact(message: string, detail: string, action: string): Promise<boolean> {
+	const result = await window.showWarningMessage(message, { detail, modal: true }, action);
+	return result === action;
+}
+
+function describeCommit(hash: string | undefined, message: string | undefined): string {
+	if (!hash) {
+		return l10n.t('No commit');
+	}
+
+	const subject = message?.split('\n')[0] ?? l10n.t('Unknown message');
+	return `${hash.substring(0, 12)} ${subject}`;
+}
+
+async function confirmAmend(repository: Repository): Promise<boolean> {
+	const commit = await repository.getCommit('HEAD');
+	const detail = [
+		l10n.t('Current commit: {0}', describeCommit(commit.hash, commit.message)),
+		l10n.t('Staged files: {0}', repository.indexGroup.resourceStates.length),
+		l10n.t('The current commit will be replaced with a new commit.'),
+	].join('\n');
+
+	return confirmImpact(
+		l10n.t('Amend the current commit?'),
+		detail,
+		l10n.t('Amend Commit')
+	);
+}
+
+async function confirmRebase(repository: Repository, target: string): Promise<boolean> {
+	const commits = await repository.log({ range: `${target}..HEAD`, maxEntries: 101, silent: true });
+	const commitCount = commits.length > 100 ? l10n.t('more than 100') : String(commits.length);
+	const detail = [
+		l10n.t('Current branch: {0}', repository.HEAD?.name ?? l10n.t('detached HEAD')),
+		l10n.t('Target: {0}', target),
+		l10n.t('Commits to replay: {0}', commitCount),
+		l10n.t('Rebase rewrites the listed commits with new commit IDs.'),
+	].join('\n');
+
+	return confirmImpact(
+		l10n.t('Rebase the current branch?'),
+		detail,
+		l10n.t('Rebase')
+	);
+}
+
+async function confirmBranchDeletion(repository: Repository, name: string, remote: boolean): Promise<boolean> {
+	const branch = await repository.getBranch(name);
+	const commit = branch.commit ? await repository.getCommit(branch.commit) : branch.commitDetails;
+	const detail = [
+		l10n.t('Branch: {0}', name),
+		l10n.t('Location: {0}', remote ? l10n.t('Remote') : l10n.t('Local')),
+		l10n.t('Tip: {0}', describeCommit(branch.commit, commit?.message)),
+		l10n.t('Only the branch reference will be removed. Commits may become unreachable.'),
+	].join('\n');
+
+	return confirmImpact(
+		l10n.t('Delete branch "{0}"?', name),
+		detail,
+		l10n.t('Delete Branch')
+	);
+}
+
+async function confirmWorktreeDeletion(worktree: Worktree): Promise<boolean> {
+	const branch = worktree.detached
+		? l10n.t('detached HEAD')
+		: worktree.ref.replace(/^refs\/heads\//, '');
+	const detail = [
+		l10n.t('Path: {0}', worktree.path),
+		l10n.t('Branch: {0}', branch),
+		l10n.t('Commit: {0}', describeCommit(worktree.commitDetails?.hash, worktree.commitDetails?.message)),
+		l10n.t('The worktree directory and its administrative metadata will be removed.'),
+	].join('\n');
+
+	return confirmImpact(
+		l10n.t('Delete worktree "{0}"?', worktree.name),
+		detail,
+		l10n.t('Delete Worktree')
+	);
 }
 
 function compareRepositoryLabel(repositoryRoot1: string, repositoryRoot2: string): number {
@@ -2537,6 +2622,10 @@ export class CommandCenter {
 			}
 		}
 
+		if (opts.amend && !await confirmAmend(repository)) {
+			return;
+		}
+
 		const message = await getCommitMessage();
 
 		if (!message && !opts.amend && !opts.useEditor) {
@@ -3349,6 +3438,11 @@ export class CommandCenter {
 			run = force => choice.run(repository, force);
 		}
 
+		const branchName = options.remote && remote ? `${remote}/${name}` : name;
+		if (!await confirmBranchDeletion(repository, branchName, options.remote)) {
+			return;
+		}
+
 		try {
 			await run(options.force);
 		} catch (err) {
@@ -3457,7 +3551,9 @@ export class CommandCenter {
 		const choice = await this.pickRef(getQuickPickItems(), placeHolder);
 
 		if (choice instanceof RebaseItem) {
-			await choice.run(repository);
+			if (choice.refName && await confirmRebase(repository, choice.refName)) {
+				await choice.run(repository);
+			}
 		}
 	}
 
@@ -3803,6 +3899,11 @@ export class CommandCenter {
 			return;
 		}
 
+		const worktree = (await mainRepository.getWorktreeDetails()).find(worktree => pathEquals(worktree.path, repository.root));
+		if (!worktree || !await confirmWorktreeDeletion(worktree)) {
+			return;
+		}
+
 		await mainRepository.deleteWorktree(repository.root);
 	}
 
@@ -4072,17 +4173,18 @@ export class CommandCenter {
 			const useForcePushIfIncludes = config.get<boolean>('useForcePushIfIncludes') === true;
 			forcePushMode = useForcePushWithLease ? useForcePushIfIncludes ? ForcePushMode.ForceWithLeaseIfIncludes : ForcePushMode.ForceWithLease : ForcePushMode.Force;
 
-			if (config.get<boolean>('confirmForcePush')) {
-				const message = l10n.t('You are about to force push your changes, this can be destructive and could inadvertently overwrite changes made by others.\n\nAre you sure to continue?');
-				const yes = l10n.t('OK');
-				const neverAgain = l10n.t('OK, Don\'t Ask Again');
-				const pick = await window.showWarningMessage(message, { modal: true }, yes, neverAgain);
-
-				if (pick === neverAgain) {
-					config.update('confirmForcePush', false, true);
-				} else if (pick !== yes) {
-					return;
-				}
+			const remote = pushOptions.pushTo?.remote ?? repository.HEAD?.upstream?.remote ?? remotes[0]?.name;
+			const detail = [
+				l10n.t('Branch: {0}', repository.HEAD?.name ?? l10n.t('detached HEAD')),
+				l10n.t('Remote: {0}', remote ?? l10n.t('Not selected')),
+				l10n.t('Force push can overwrite commits added by other contributors.'),
+			].join('\n');
+			if (!await confirmImpact(
+				l10n.t('Force push this branch?'),
+				detail,
+				l10n.t('Force Push')
+			)) {
+				return;
 			}
 		}
 
@@ -5239,7 +5341,9 @@ export class CommandCenter {
 			return;
 		}
 
-		await repository.rebase(artifact.id);
+		if (await confirmRebase(repository, artifact.id)) {
+			await repository.rebase(artifact.id);
+		}
 	}
 
 	@command('git.repositories.createFrom', { repository: true })
@@ -5315,13 +5419,6 @@ export class CommandCenter {
 	@command('git.repositories.deleteBranch', { repository: true })
 	async artifactDeleteBranch(repository: Repository, artifact: SourceControlArtifact): Promise<void> {
 		if (!repository || !artifact) {
-			return;
-		}
-
-		const message = l10n.t('Are you sure you want to delete branch "{0}"? This action will permanently remove the branch reference from the repository.', artifact.name);
-		const yes = l10n.t('Delete Branch');
-		const result = await window.showWarningMessage(message, { modal: true }, yes);
-		if (result !== yes) {
 			return;
 		}
 
@@ -5439,6 +5536,11 @@ export class CommandCenter {
 	@command('git.repositories.deleteWorktree', { repository: true })
 	async artifactDeleteWorktree(repository: Repository, artifact: SourceControlArtifact): Promise<void> {
 		if (!repository || !artifact) {
+			return;
+		}
+
+		const worktree = (await repository.getWorktreeDetails()).find(worktree => pathEquals(worktree.path, artifact.id));
+		if (!worktree || !await confirmWorktreeDeletion(worktree)) {
 			return;
 		}
 
@@ -5597,7 +5699,7 @@ export class CommandCenter {
 							command = `${command} ${err.gitCommand}`;
 						}
 
-						this.commandErrors.set(uri, `> ${command}\n${err.stderr}`);
+						this.commandErrors.set(uri, redactGitSecrets(`> ${command}\n${err.stderr}`));
 
 						try {
 							const doc = await workspace.openTextDocument(uri);
@@ -5635,7 +5737,7 @@ export class CommandCenter {
 						break;
 					case GitErrorCodes.AuthenticationFailed: {
 						const regex = /Authentication failed for '(.*)'/i;
-						const match = regex.exec(err.stderr || String(err));
+						const match = regex.exec(redactGitSecrets(err.stderr || String(err)));
 
 						message = match
 							? l10n.t('Failed to authenticate to git remote:\n\n{0}', match[1])
@@ -5666,7 +5768,7 @@ export class CommandCenter {
 						options.modal = false;
 						break;
 					default: {
-						const hintLines = (err.stderr || err.stdout || err.message || String(err))
+						const hintLines = redactGitSecrets(err.stderr || err.stdout || err.message || String(err))
 							.replace(/^error: /mi, '')
 							.replace(/^> husky.*$/mi, '')
 							.split(/[\r\n]/)

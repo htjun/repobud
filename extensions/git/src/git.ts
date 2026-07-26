@@ -77,6 +77,14 @@ function parseVersion(raw: string): string {
 	return raw.replace(/^git version /, '');
 }
 
+export function redactGitSecrets(value: string): string {
+	return value
+		.replace(/\b(https?:\/\/)([^/\s:@]+):([^@\s/]+)@/gi, '$1$2:***@')
+		.replace(/([?&](?:access_token|auth|oauth_token|password|secret|token)=)[^&\s]+/gi, '$1***')
+		.replace(/(\b(?:authorization|proxy-authorization):\s*(?:basic|bearer)\s+)\S+/gi, '$1***')
+		.replace(/(\b(?:password|secret|token)=)\S+/gi, '$1***');
+}
+
 function findSpecificGit(path: string, onValidate: (path: string) => boolean): Promise<IGit> {
 	return new Promise<IGit>((c, e) => {
 		if (!onValidate(path)) {
@@ -608,7 +616,7 @@ export class Git {
 		if (options.log !== false) {
 			const startTime = Date.now();
 			child.on('exit', (_) => {
-				this.log(`> git ${args.join(' ')} [${Date.now() - startTime}ms]${child.killed ? ' (cancelled)' : ''}\n`);
+				this.log(`> git ${redactGitSecrets(args.join(' '))} [${Date.now() - startTime}ms]${child.killed ? ' (cancelled)' : ''}\n`);
 			});
 		}
 
@@ -631,7 +639,7 @@ export class Git {
 			bufferResult = await exec(child, options.cancellationToken);
 		} catch (ex) {
 			if (ex instanceof CancellationError) {
-				this.log(`> git ${args.join(' ')} [${Date.now() - startExec}ms] (cancelled)\n`);
+				this.log(`> git ${redactGitSecrets(args.join(' '))} [${Date.now() - startExec}ms] (cancelled)\n`);
 			}
 
 			throw ex;
@@ -639,16 +647,16 @@ export class Git {
 
 		if (options.log !== false) {
 			// command
-			this.log(`> git ${args.join(' ')} [${Date.now() - startExec}ms]\n`);
+			this.log(`> git ${redactGitSecrets(args.join(' '))} [${Date.now() - startExec}ms]\n`);
 
 			// stdout
 			if (bufferResult.stdout.length > 0 && args.find(a => this.commandsToLog.includes(a))) {
-				this.log(`${bufferResult.stdout}\n`);
+				this.log(`${redactGitSecrets(bufferResult.stdout.toString('utf8'))}\n`);
 			}
 
 			// stderr
 			if (bufferResult.stderr.length > 0) {
-				this.log(`${bufferResult.stderr}\n`);
+				this.log(`${redactGitSecrets(bufferResult.stderr)}\n`);
 			}
 		}
 

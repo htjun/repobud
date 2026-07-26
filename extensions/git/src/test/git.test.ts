@@ -4,11 +4,27 @@
  *--------------------------------------------------------------------------------------------*/
 
 import 'mocha';
-import { GitStatusParser, parseGitCommits, parseGitmodules, parseLsTree, parseLsFiles, parseGitRemotes, parseCoAuthors } from '../git';
+import { GitStatusParser, parseGitCommits, parseGitmodules, parseLsTree, parseLsFiles, parseGitRemotes, parseCoAuthors, redactGitSecrets } from '../git';
 import * as assert from 'assert';
 import { splitInChunks } from '../util';
 
 suite('git', () => {
+	test('redacts credentials from Git output', () => {
+		const output = [
+			'https://user:password@example.com/repository.git',
+			'https://example.com/repository.git?access_token=secret-value&ref=main',
+			'Authorization: Bearer secret-value',
+			'token=secret-value',
+		].join('\n');
+
+		assert.strictEqual(redactGitSecrets(output), [
+			'https://user:***@example.com/repository.git',
+			'https://example.com/repository.git?access_token=***&ref=main',
+			'Authorization: Bearer ***',
+			'token=***',
+		].join('\n'));
+	});
+
 	suite('GitStatusParser', () => {
 		test('empty parser', () => {
 			const parser = new GitStatusParser();

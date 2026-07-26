@@ -116,6 +116,10 @@ async function main() {
 				JSON.stringify({
 					'files.readonlyExclude': { '**': true },
 					'files.readonlyInclude': {},
+					'git.allowForcePush': true,
+					'git.confirmForcePush': false,
+					'scm.graph.pageOnScroll': false,
+					'scm.graph.pageSize': 3,
 					'window.dialogStyle': 'custom',
 				})
 			),
@@ -125,6 +129,24 @@ async function main() {
 					key: 'cmd+alt+h',
 					command: 'git.diff.stageHunk',
 					when: 'editorTextFocus && resourceScheme == file',
+				}, {
+					key: 'cmd+alt+a',
+					command: 'git.commitAmend',
+				}, {
+					key: 'cmd+alt+d',
+					command: 'git.deleteBranch',
+				}, {
+					key: 'cmd+alt+f',
+					command: 'git.pushForce',
+				}, {
+					key: 'cmd+alt+g',
+					command: 'git.refresh',
+				}, {
+					key: 'cmd+alt+r',
+					command: 'git.rebase',
+				}, {
+					key: 'cmd+alt+w',
+					command: 'git.deleteWorktree',
 				}])
 			),
 		]);
@@ -287,6 +309,111 @@ async function main() {
 			'Commit did not complete after the failing hook was removed.'
 		);
 		await page.getByRole('treeitem', { name: /^commit-target\.txt,/ }).waitFor({ state: 'detached' });
+
+		await writeFile(join(fixturePath, 'amend-target.txt'), 'amend target\n');
+		runGit(fixturePath, ['add', 'amend-target.txt']);
+		await page.getByRole('treeitem', { name: /^amend-target\.txt, Index Added/ }).waitFor();
+		await commitInput.focus();
+		await page.keyboard.type('Amended smoke');
+		await page.keyboard.press('Meta+Alt+A');
+		const amendDialog = page.getByRole('dialog');
+		await amendDialog.waitFor();
+		assert.match(await amendDialog.innerText(), /Amend the current commit\?/);
+		assert.match(await amendDialog.innerText(), /Current commit: .* Smoke commit/);
+		assert.match(await amendDialog.innerText(), /Staged files: 1/);
+		await page.keyboard.press('Escape');
+		assert.equal(runGit(fixturePath, ['log', '-1', '--pretty=%s']), 'Smoke commit');
+		runGit(fixturePath, ['reset', '--hard', 'HEAD']);
+		runGit(fixturePath, ['clean', '-fd']);
+
+		runGit(fixturePath, ['branch', 'delete-me']);
+		await page.keyboard.press('Meta+Alt+D');
+		await page.getByRole('option', { name: /delete-me/ }).click();
+		const branchDeleteDialog = page.getByRole('dialog');
+		await branchDeleteDialog.waitFor();
+		assert.match(await branchDeleteDialog.innerText(), /Delete branch "delete-me"\?/);
+		assert.match(await branchDeleteDialog.innerText(), /Location: Local/);
+		assert.match(await branchDeleteDialog.innerText(), /Tip: /);
+		await page.keyboard.press('Escape');
+		assert.match(runGit(fixturePath, ['branch', '--list', 'delete-me']), /delete-me/);
+
+		runGit(fixturePath, ['branch', 'rebase-target']);
+		await writeFile(join(fixturePath, 'rebase.txt'), 'rebase\n');
+		runGit(fixturePath, ['add', 'rebase.txt']);
+		runGit(fixturePath, ['commit', '-m', 'Rebase source']);
+		await page.keyboard.press('Meta+Alt+R');
+		await page.getByRole('option', { name: /rebase-target/ }).click();
+		const rebaseDialog = page.getByRole('dialog');
+		await rebaseDialog.waitFor();
+		assert.match(await rebaseDialog.innerText(), /Rebase the current branch\?/);
+		assert.match(await rebaseDialog.innerText(), /Commits to replay: 1/);
+		await page.keyboard.press('Escape');
+
+		const worktreePath = join(temporaryRoot, 'review-worktree');
+		runGit(fixturePath, ['worktree', 'add', '-b', 'worktree-review', worktreePath, 'main']);
+		await page.keyboard.press('Meta+Alt+W');
+		await page.getByRole('option', { name: /worktree-review/ }).click();
+		const worktreeDeleteDialog = page.getByRole('dialog');
+		await worktreeDeleteDialog.waitFor();
+		assert.match(await worktreeDeleteDialog.innerText(), /Delete worktree/);
+		assert.match(await worktreeDeleteDialog.innerText(), /Branch: worktree-review/);
+		assert.match(await worktreeDeleteDialog.innerText(), new RegExp(worktreePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+		await page.keyboard.press('Escape');
+		assert.ok(existsSync(worktreePath));
+
+		const remotePath = join(temporaryRoot, 'remote.git');
+		runGit(temporaryRoot, ['init', '--bare', remotePath]);
+		runGit(fixturePath, ['remote', 'add', 'origin', remotePath]);
+		runGit(fixturePath, ['push', '-u', 'origin', 'main']);
+		await page.keyboard.press('Meta+Alt+G');
+		await waitFor(
+			() => page.getByRole('button', { name: 'Pull' }).isEnabled(),
+			'Remote state did not refresh after adding origin.'
+		);
+		await page.keyboard.press('Meta+Alt+F');
+		const forcePushDialog = page.getByRole('dialog');
+		await forcePushDialog.waitFor();
+		assert.match(await forcePushDialog.innerText(), /Force push this branch\?/);
+		assert.match(await forcePushDialog.innerText(), /Remote: origin/);
+		await page.keyboard.press('Escape');
+
+		runGit(fixturePath, ['switch', '-c', 'graph-feature']);
+		await writeFile(join(fixturePath, 'graph-feature.txt'), 'feature\n');
+		runGit(fixturePath, ['add', 'graph-feature.txt']);
+		runGit(fixturePath, ['commit', '-m', 'Graph feature']);
+		runGit(fixturePath, ['switch', 'main']);
+		await writeFile(join(fixturePath, 'graph-main.txt'), 'main\n');
+		runGit(fixturePath, ['add', 'graph-main.txt']);
+		runGit(fixturePath, ['commit', '-m', 'Graph main']);
+		runGit(fixturePath, ['merge', '--no-ff', 'graph-feature', '-m', 'Graph merge']);
+		runGit(fixturePath, ['tag', 'v-smoke']);
+		runGit(fixturePath, ['push', 'origin', 'main', '--tags']);
+		await page.getByRole('treeitem', { name: /Graph merge/ }).waitFor();
+		const graphMergeItem = page.getByRole('treeitem', { name: /Graph merge/ });
+		assert.match(await graphMergeItem.innerText(), /main/);
+		await graphMergeItem.hover();
+		const graphMergeHover = page.locator('.monaco-hover-content').filter({ hasText: 'origin/main' }).last();
+		await graphMergeHover.waitFor();
+		assert.match(await graphMergeHover.innerText(), /origin\/main/);
+		assert.match(await graphMergeHover.innerText(), /v-smoke/);
+
+		await writeFile(join(fixturePath, 'refresh.txt'), 'refresh\n');
+		runGit(fixturePath, ['add', 'refresh.txt']);
+		runGit(fixturePath, ['commit', '-m', 'Stale refresh']);
+		await page.getByRole('button', { name: 'Refresh' }).last().click();
+		await page.getByRole('treeitem', { name: /Stale refresh/ }).waitFor();
+		const historyTree = page.getByRole('tree', { name: 'Source Control History' });
+		const historyItemsBeforePagination = await historyTree.getByRole('treeitem').count();
+		let loadMoreItem = page.getByRole('treeitem', { name: /Load More/ });
+		await loadMoreItem.waitFor();
+		await loadMoreItem.click();
+		await waitFor(
+			async () => await historyTree.getByRole('treeitem').count() > historyItemsBeforePagination,
+			'Graph pagination did not append history items.'
+		);
+		loadMoreItem = page.getByRole('treeitem', { name: /Load More/ });
+		await loadMoreItem.click();
+		await page.getByRole('treeitem', { name: /Initial fixture/ }).waitFor();
 
 		runGit(fixturePath, ['switch', '-c', 'incoming']);
 		await writeFile(join(fixturePath, 'conflict.txt'), 'incoming\n');
