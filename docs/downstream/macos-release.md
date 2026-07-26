@@ -103,10 +103,10 @@ code-signing, artifact publishing, and update-feed credentials must be isolated 
 ## Release evidence
 
 The packaged E2E harness creates an isolated repository, configuration repository, application
-profile, home directory, extension directory, shared-data directory, mock Keychain namespace, and
+profile, home directory, extension directory, shared-data directory, in-memory mock Keychain, and
 mock remote services. The application process receives only a minimal host environment, so it
-cannot read the developer's real global client configuration or credentials. It covers repository
-switching, Git review, Skills, client projections, MCP, Connections, and Plugins.
+cannot read the developer's real global client configuration, Keychain, or credentials. It covers
+repository switching, Git review, Skills, client projections, MCP, Connections, and Plugins.
 
 On failure, the harness deletes the raw fixture tree and retains only a cleared screenshot,
 accessibility snapshot, application/console logs, selected runtime logs, and a manifest under

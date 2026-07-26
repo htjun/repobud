@@ -17,14 +17,17 @@ export class KeychainCredentialMainService implements IKeychainCredentialService
 	declare readonly _serviceBrand: undefined;
 
 	private readonly serviceName: string;
+	private readonly testCredentials: Map<string, string> | undefined;
 
 	constructor(@IProductService productService: IProductService) {
 		const productId = productService.darwinBundleIdentifier ?? productService.applicationName;
 		const testNamespace = env['REPOSITORY_CONTEXT_KEYCHAIN_NAMESPACE'];
-		const suffix = app.commandLine.hasSwitch('use-mock-keychain') && testNamespace
+		const useMockKeychain = app.commandLine.hasSwitch('use-mock-keychain') && Boolean(testNamespace);
+		const suffix = useMockKeychain && testNamespace
 			? `.test.${testNamespace.replaceAll(/[^A-Za-z0-9._-]/g, '_')}`
 			: '';
 		this.serviceName = `${productId}.connections.github${suffix}`;
+		this.testCredentials = useMockKeychain ? new Map() : undefined;
 	}
 
 	async isAvailable(): Promise<boolean> {
@@ -33,6 +36,9 @@ export class KeychainCredentialMainService implements IKeychainCredentialService
 
 	async get(connectionId: string): Promise<string | undefined> {
 		this.assertAvailable();
+		if (this.testCredentials) {
+			return this.testCredentials.get(connectionId);
+		}
 		try {
 			return (await keytar.getPassword(this.serviceName, connectionId)) ?? undefined;
 		} catch {
@@ -45,6 +51,10 @@ export class KeychainCredentialMainService implements IKeychainCredentialService
 		if (!secret) {
 			throw new Error('A non-empty Connection credential is required.');
 		}
+		if (this.testCredentials) {
+			this.testCredentials.set(connectionId, secret);
+			return;
+		}
 		try {
 			await keytar.setPassword(this.serviceName, connectionId, secret);
 		} catch {
@@ -54,6 +64,10 @@ export class KeychainCredentialMainService implements IKeychainCredentialService
 
 	async delete(connectionId: string): Promise<void> {
 		this.assertAvailable();
+		if (this.testCredentials) {
+			this.testCredentials.delete(connectionId);
+			return;
+		}
 		try {
 			await keytar.deletePassword(this.serviceName, connectionId);
 		} catch {
