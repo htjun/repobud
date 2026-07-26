@@ -47,6 +47,9 @@ export interface ISkillProjectionResult {
 export const IRepoBudSkillProjectionService =
 	createDecorator<IRepoBudSkillProjectionService>('repoBudSkillProjectionService');
 
+/**
+ * Inspects and updates managed Skill projections for supported clients.
+ */
 export interface IRepoBudSkillProjectionService {
 	readonly _serviceBrand: undefined;
 

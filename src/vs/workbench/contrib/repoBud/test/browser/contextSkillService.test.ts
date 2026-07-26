@@ -51,6 +51,9 @@ class TestRepositoryCatalogService implements IRepositoryCatalogService {
 	async refresh(): Promise<void> { }
 }
 
+/**
+ * Records Skill projection requests made by the browser service under test.
+ */
 class TestSkillProjectionService implements IRepoBudSkillProjectionService {
 
 	declare readonly _serviceBrand: undefined;

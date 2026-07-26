@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import { Schemas } from '../../../base/common/network.js';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from '../../../base/common/path.js';
+import { localize } from '../../../nls.js';
 import {
 	IRepoBudSkillProjectionService,
 	ISkillProjectionManifest,
@@ -21,6 +22,9 @@ interface IValidatedProjectionPaths {
 	readonly overlay?: string;
 }
 
+/**
+ * Maintains Skill projections while protecting canonical source content.
+ */
 export class RepoBudSkillProjectionMainService implements IRepoBudSkillProjectionService {
 
 	declare readonly _serviceBrand: undefined;
@@ -99,7 +103,10 @@ export class RepoBudSkillProjectionMainService implements IRepoBudSkillProjectio
 				manifest,
 				sourceHash,
 				outputHash,
-				detail: 'The projected copy was modified outside RepoBud.',
+				detail: localize(
+					'repoBudSkillProjectionModifiedOutsideProduct',
+					'The projected copy was modified outside RepoBud.'
+				),
 			};
 		}
 		if (sourceHash !== manifest.sourceHash) {

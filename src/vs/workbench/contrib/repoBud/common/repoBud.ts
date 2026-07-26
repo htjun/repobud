@@ -18,6 +18,9 @@ export const REPOBUD_VIEW_IDS = {
 
 const allowedPrimaryViewContainerIds = new Set<string>(Object.values(REPOBUD_VIEW_CONTAINER_IDS));
 
+/**
+ * Returns whether a view container belongs in the focused RepoBud primary side bar.
+ */
 export function isRepoBudViewContainerAllowed(id: string, location: ViewContainerLocation): boolean {
 	return location === ViewContainerLocation.Sidebar && allowedPrimaryViewContainerIds.has(id);
 }

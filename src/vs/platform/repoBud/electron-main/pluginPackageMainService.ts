@@ -64,6 +64,9 @@ interface IInspectedPlugin {
 	readonly trustRequired: boolean;
 }
 
+/**
+ * Implements trusted Plugin package lifecycle operations in the Electron main process.
+ */
 export class RepoBudPluginPackageMainService implements IRepoBudPluginPackageService {
 
 	declare readonly _serviceBrand: undefined;

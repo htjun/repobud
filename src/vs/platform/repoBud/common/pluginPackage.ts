@@ -120,6 +120,9 @@ export interface IPluginUpdateResult {
 export const IRepoBudPluginPackageService =
 	createDecorator<IRepoBudPluginPackageService>('repoBudPluginPackageService');
 
+/**
+ * Manages trusted Plugin packages in the canonical configuration repository.
+ */
 export interface IRepoBudPluginPackageService {
 	readonly _serviceBrand: undefined;
 

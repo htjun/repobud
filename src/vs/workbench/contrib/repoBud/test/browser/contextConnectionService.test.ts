@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { DeferredPromise } from '../../../../../base/common/async.js';
 import { Event } from '../../../../../base/common/event.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../../base/common/network.js';
@@ -75,8 +76,17 @@ class TestGitHubConnectionValidator implements IGitHubCredentialService {
 
 	declare readonly _serviceBrand: undefined;
 	readonly results = new Map<string, IGitHubCredentialValidation>();
+	readonly pendingResults = new Map<string, {
+		readonly started: DeferredPromise<void>;
+		readonly result: DeferredPromise<IGitHubCredentialValidation>;
+	}>();
 
 	async validate(token: string): Promise<IGitHubCredentialValidation> {
+		const pending = this.pendingResults.get(token);
+		if (pending) {
+			pending.started.complete();
+			return pending.result.p;
+		}
 		const result = this.results.get(token);
 		if (!result) {
 			throw new Error('Unexpected test token.');
@@ -273,6 +283,33 @@ suite('ContextConnectionService', () => {
 		assert.strictEqual(reconnected.id, connection.id);
 		assert.strictEqual(reconnected.accountLabel, 'alpha-renamed');
 		assert.strictEqual(service.snapshot.groups[0].state, 'valid');
+	});
+
+	test('does not let stale validation overwrite a disconnect', async () => {
+		setValidToken('token-alpha', '101', 'alpha');
+		const service = createService();
+		const connection = await service.addGitHubConnection('github-tools', 'token-alpha');
+		const pending = {
+			started: new DeferredPromise<void>(),
+			result: new DeferredPromise<IGitHubCredentialValidation>(),
+		};
+		validator.pendingResults.set('token-alpha', pending);
+
+		const validation = service.validateConnection(connection.id);
+		await pending.started.p;
+		await service.disconnect(connection.id);
+		pending.result.complete(validator.results.get('token-alpha')!);
+		await validation;
+
+		assert.deepStrictEqual({
+			secret: keychainCredentialService.secrets.get(connection.id),
+			state: service.snapshot.groups[0].state,
+			connectionState: service.snapshot.groups[0].connections[0].state,
+		}, {
+			secret: undefined,
+			state: 'missing',
+			connectionState: 'missing',
+		});
 	});
 
 	test('rejects identity changes without silently rebinding a Connection', async () => {

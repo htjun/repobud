@@ -51,6 +51,9 @@ class TestRepositoryCatalogService implements IRepositoryCatalogService {
 	async refresh(): Promise<void> { }
 }
 
+/**
+ * Records MCP health requests made by the browser service under test.
+ */
 class TestMcpHealthService implements IRepoBudMcpHealthService {
 
 	declare readonly _serviceBrand: undefined;

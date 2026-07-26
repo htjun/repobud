@@ -38,6 +38,9 @@ export interface IMcpHealthResult {
 export const IRepoBudMcpHealthService =
 	createDecorator<IRepoBudMcpHealthService>('repoBudMcpHealthService');
 
+/**
+ * Checks MCP server health without persisting runtime output.
+ */
 export interface IRepoBudMcpHealthService {
 	readonly _serviceBrand: undefined;
 

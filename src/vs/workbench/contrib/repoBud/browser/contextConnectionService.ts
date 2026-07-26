@@ -138,11 +138,18 @@ export class ContextConnectionService extends Disposable implements IContextConn
 	}
 
 	async validateConnection(id: string): Promise<void> {
+		const token = await this.keychainCredentialService.get(id);
+		const validation = token ? await this.validator.validate(token) : undefined;
+		const currentToken = await this.keychainCredentialService.get(id);
+		// Discard a validation result if the credential changed while the remote request was in flight.
+		if (currentToken !== token) {
+			await this.refresh();
+			return;
+		}
 		const records = this.readRegistry();
 		const record = this.getRecord(records, id);
-		const token = await this.keychainCredentialService.get(id);
-		const next = token
-			? this.updateRecordFromValidation(record, await this.validator.validate(token))
+		const next = validation
+			? this.updateRecordFromValidation(record, validation)
 			: { ...record, state: 'missing' as const, lastValidatedAt: Date.now() };
 		this.writeRegistry(records.map(candidate => candidate.id === id ? next : candidate));
 		await this.refresh();

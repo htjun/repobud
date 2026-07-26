@@ -15,6 +15,9 @@ import { IViewDescriptorService } from '../../../common/views.js';
 import { IViewletViewOptions } from '../../../browser/parts/views/viewsViewlet.js';
 import { ViewPane } from '../../../browser/parts/views/viewPane.js';
 
+/**
+ * Hosts an allowed RepoBud product view in the primary side bar.
+ */
 export class RepoBudViewPane extends ViewPane {
 
 	constructor(

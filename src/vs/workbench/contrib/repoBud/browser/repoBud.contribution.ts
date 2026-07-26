@@ -134,6 +134,9 @@ registerProductArea(
 	new SyncDescriptor(IntegrationsViewPane)
 );
 
+/**
+ * Applies the focused RepoBud shell layout when the workbench starts.
+ */
 class RepoBudStartupContribution extends Disposable {
 
 	static readonly ID = 'workbench.contrib.repoBud.startup';

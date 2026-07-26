@@ -37,6 +37,9 @@ interface IMcpInitializeResponse {
 	};
 }
 
+/**
+ * Performs bounded MCP health checks in the Electron main process.
+ */
 export class RepoBudMcpHealthMainService implements IRepoBudMcpHealthService {
 
 	declare readonly _serviceBrand: undefined;
