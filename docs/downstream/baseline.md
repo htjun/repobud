@@ -55,20 +55,38 @@ npm run gulp compile
 postinstall. The Gulp `compile` target builds and type-checks the client and built-in extensions,
 including `extensions/git`.
 
-Launch the focused downstream product with its dedicated preview profile:
+Create and verify the focused Apple-silicon application bundle through the product-owned command:
+
+```bash
+npm run package:macos
+```
+
+The package is written to
+`../VSCode-darwin-arm64/Repository Context Workbench.app`. The command verifies the bundle name,
+identifier, product metadata, architecture, and source commit before succeeding. Re-run the
+verification without rebuilding with:
+
+```bash
+npm run verify:macos-package
+```
+
+Launch that verified package with its dedicated preview profile:
 
 ```bash
 npm run preview
 ```
 
-The preview command runs the pinned prelaunch preparation, opens the Repository Context Workbench
-executable directly, and keeps product state in `~/.repository-context-workbench-preview`. It does
-not inherit an existing Code OSS profile, so upstream Explorer, Chat, or extension state cannot
-reappear through profile restoration. Pass a repository path after `--` to open it immediately:
+The preview command refuses a missing, incorrectly branded, or stale package, opens the packaged
+Repository Context Workbench, and keeps product state in
+`~/.repository-context-workbench-preview`. It does not use the upstream development bundle or
+inherit an existing Code OSS profile. Pass a repository path after `--` to open it immediately:
 
 ```bash
 npm run preview -- /path/to/repository
 ```
+
+`--allow-stale` exists only for inspecting an older local package while diagnosing a packaging
+failure. It does not make that package releasable.
 
 The initial baseline run downloaded the pinned Electron build and upstream built-in extensions,
 created the application bundle, initialized the profile, started the renderer and extension host,

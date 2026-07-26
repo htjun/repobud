@@ -14,6 +14,10 @@ import { basename, join } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
+import {
+	captureSmokeFailureArtifacts,
+	redactSmokeText,
+} from './repository-context-smoke-artifacts.mjs';
 
 const repositoryRoot = process.cwd();
 const applicationPath = process.env.REPOSITORY_CONTEXT_APP_PATH ??
@@ -246,6 +250,7 @@ async function main() {
 	let page;
 	let githubFixture;
 	const consoleErrors = [];
+	let fixtureSecrets = [];
 
 	try {
 		await Promise.all([
@@ -420,6 +425,7 @@ async function main() {
 			beta: randomBytes(24).toString('hex'),
 			betaReconnected: randomBytes(24).toString('hex'),
 		};
+		fixtureSecrets = Object.values(fixtureTokens);
 		githubFixture = await startGitHubFixtureServer(fixtureTokens);
 		const cdpPort = await reservePort();
 		const keychainNamespace = basename(temporaryRoot);
@@ -1203,16 +1209,20 @@ async function main() {
 
 		console.log('Repository Context packaged shell smoke test passed.');
 	} catch (error) {
-		if (page) {
-			console.error(await page.locator('body').ariaSnapshot().catch(() => 'Unable to capture accessibility snapshot.'));
+		const sensitiveValues = [temporaryRoot, ...fixtureSecrets];
+		const artifactDirectory = await captureSmokeFailureArtifacts({
+			temporaryRoot,
+			userDataPath,
+			sensitiveValues,
+			applicationLog,
+			consoleErrors,
+			error,
+			page,
+		}).catch(() => undefined);
+		if (artifactDirectory) {
+			console.error(`Sanitized Repository Context smoke artifacts: ${artifactDirectory}`);
 		}
-		if (applicationLog.length > 0) {
-			console.error(applicationLog.join(''));
-		}
-		if (consoleErrors.length > 0) {
-			console.error(consoleErrors.join('\n'));
-		}
-		throw error;
+		throw new Error(redactSmokeText(error?.stack ?? error, sensitiveValues));
 	} finally {
 		await browser?.close().catch(() => undefined);
 		if (githubFixture) {
@@ -1221,11 +1231,7 @@ async function main() {
 		if (child) {
 			await stopApplication(child);
 		}
-		if (process.env.REPOSITORY_CONTEXT_SMOKE_KEEP_ARTIFACTS === '1') {
-			console.error(`Repository Context smoke artifacts retained at ${temporaryRoot}`);
-		} else {
-			await rm(temporaryRoot, { recursive: true, force: true });
-		}
+		await rm(temporaryRoot, { recursive: true, force: true });
 	}
 }
 

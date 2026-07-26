@@ -4,19 +4,19 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { spawn } from 'node:child_process';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { verifyRepositoryContextPackage } from './repository-context-package.mjs';
 
-const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const product = JSON.parse(await readFile(join(repositoryRoot, 'product.json'), 'utf8'));
 const previewDataRoot = process.env.REPOSITORY_CONTEXT_PREVIEW_DATA_DIR ??
 	join(homedir(), '.repository-context-workbench-preview');
 const userDataDirectory = join(previewDataRoot, 'user-data');
 const extensionsDirectory = join(previewDataRoot, 'extensions');
 const sharedDataDirectory = join(previewDataRoot, 'shared-data');
+const allowStale = process.argv.includes('--allow-stale');
+const applicationArgs = process.argv.slice(2).filter(argument => argument !== '--allow-stale');
 
 await Promise.all([
 	mkdir(userDataDirectory, { recursive: true }),
@@ -24,11 +24,10 @@ await Promise.all([
 	mkdir(sharedDataDirectory, { recursive: true }),
 ]);
 
-function run(command, args, environment = process.env) {
+function run(command, args) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {
-			cwd: repositoryRoot,
-			env: environment,
+			env: process.env,
 			stdio: 'inherit',
 		});
 		child.once('error', reject);
@@ -42,36 +41,17 @@ function run(command, args, environment = process.env) {
 	});
 }
 
-const prelaunchCode = await run(process.execPath, ['build/lib/preLaunch.ts']);
-if (prelaunchCode !== 0) {
-	process.exitCode = prelaunchCode;
-} else {
-	const executable = join(
-		repositoryRoot,
-		'.build',
-		'electron',
-		`${product.nameLong}.app`,
-		'Contents',
-		'MacOS',
-		product.nameShort
-	);
-	const applicationArgs = [
-		`--user-data-dir=${userDataDirectory}`,
-		`--extensions-dir=${extensionsDirectory}`,
-		`--shared-data-dir=${sharedDataDirectory}`,
-		'--disable-workspace-trust',
-		'--disable-extension=vscode.vscode-api-tests',
-		...process.argv.slice(2),
-	];
-	const environment = {
-		...process.env,
-		NODE_ENV: 'development',
-		VSCODE_DEV: '1',
-		VSCODE_CLI: '1',
-		ELECTRON_ENABLE_STACK_DUMPING: '1',
-		ELECTRON_ENABLE_LOGGING: '1',
-	};
+const packaged = await verifyRepositoryContextPackage({ allowStale });
+const launchArguments = [
+	'-n',
+	packaged.applicationPath,
+	'--args',
+	`--user-data-dir=${userDataDirectory}`,
+	`--extensions-dir=${extensionsDirectory}`,
+	`--shared-data-dir=${sharedDataDirectory}`,
+	'--disable-workspace-trust',
+	...applicationArgs,
+];
 
-	console.log(`Launching ${product.nameLong} with preview data at ${previewDataRoot}`);
-	process.exitCode = await run(executable, applicationArgs, environment);
-}
+console.log(`Opening ${packaged.name} with preview data at ${previewDataRoot}`);
+process.exitCode = await run('/usr/bin/open', launchArguments);
