@@ -31,7 +31,7 @@ async function writeSkillFixture(root, id, name, description) {
 	await mkdir(directory, { recursive: true });
 	await writeFile(join(directory, 'SKILL.md'), [
 		'---',
-		`name: ${name}`,
+		`name: ${id}`,
 		`description: ${description}`,
 		'---',
 		'',
@@ -353,15 +353,27 @@ async function main() {
 			));
 			return configuration.skills.release?.activation === 'on';
 		}, 'Repository Skill On override was not persisted.');
-		await releaseSkill.getByRole('button', { name: 'Project' }).click();
+		const codexProjection = releaseSkill.locator('.repository-context-skill-client-row').filter({ hasText: 'Codex' });
+		const claudeProjection = releaseSkill.locator('.repository-context-skill-client-row').filter({ hasText: 'Claude Code' });
+		const cursorProjection = releaseSkill.locator('.repository-context-skill-client-row').filter({ hasText: 'Cursor' });
+		await codexProjection.getByRole('button', { name: 'Project' }).click();
 		const releaseProjectionPath = join(fixturePath, '.agents', 'skills', 'release');
+		const claudeProjectionPath = join(fixturePath, '.claude', 'skills', 'release');
 		const canonicalReleasePath = join(fixturePath, '.repository-context', 'skills', 'release');
 		await waitFor(
 			async () => existsSync(releaseProjectionPath) && (await lstat(releaseProjectionPath)).isSymbolicLink(),
 			'Repository Skill was not projected to Codex as a directory symlink.'
 		);
 		assert.equal(await realpath(releaseProjectionPath), await realpath(canonicalReleasePath));
-		await releaseSkill.getByText('Codex · Linked', { exact: true }).waitFor();
+		await codexProjection.getByText('Codex · Compatible · Linked', { exact: true }).waitFor();
+		await cursorProjection.getByText('Cursor · Compatible · Linked', { exact: true }).waitFor();
+		await claudeProjection.getByRole('button', { name: 'Project' }).click();
+		await waitFor(
+			async () => existsSync(claudeProjectionPath) && (await lstat(claudeProjectionPath)).isSymbolicLink(),
+			'Repository Skill was not projected to Claude Code as a directory symlink.'
+		);
+		assert.equal(await realpath(claudeProjectionPath), await realpath(canonicalReleasePath));
+		await claudeProjection.getByText('Claude Code · Compatible · Linked', { exact: true }).waitFor();
 
 		await unlink(releaseProjectionPath);
 		await writeSkillFixture(
@@ -371,8 +383,9 @@ async function main() {
 			'Imported external release workflow.'
 		);
 		await page.getByRole('button', { name: 'Refresh Skills' }).click();
-		await releaseSkill.getByText('Codex · Modified', { exact: true }).waitFor();
-		await releaseSkill.getByRole('button', { name: 'Import changes' }).click();
+		await codexProjection.getByText('Codex · Compatible · Modified', { exact: true }).waitFor();
+		await cursorProjection.getByText('Cursor · Compatible · Modified', { exact: true }).waitFor();
+		await codexProjection.getByRole('button', { name: 'Import changes' }).click();
 		const importDialog = page.getByRole('dialog').filter({
 			hasText: 'Import projected changes into the canonical Skill?',
 		});
@@ -393,8 +406,8 @@ async function main() {
 			'Discarded external release workflow.'
 		);
 		await page.getByRole('button', { name: 'Refresh Skills' }).click();
-		await releaseSkill.getByText('Codex · Modified', { exact: true }).waitFor();
-		await releaseSkill.getByRole('button', { name: 'Restore projection' }).click();
+		await codexProjection.getByText('Codex · Compatible · Modified', { exact: true }).waitFor();
+		await codexProjection.getByRole('button', { name: 'Restore projection' }).click();
 		const restoreDialog = page.getByRole('dialog').filter({
 			hasText: 'Restore the Codex projection from canonical content?',
 		});

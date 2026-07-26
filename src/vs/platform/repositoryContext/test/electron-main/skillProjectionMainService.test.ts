@@ -69,6 +69,12 @@ suite('RepositoryContextSkillProjectionMainService', () => {
 
 		const inspected = await service.inspect({ ...request, manifest: result.manifest });
 		assert.strictEqual(inspected.state, 'copied');
+		const cursorInspection = await service.inspect({
+			...request,
+			client: 'cursor',
+			manifest: result.manifest,
+		});
+		assert.strictEqual(cursorInspection.state, 'copied');
 	});
 
 	test('reports missing, modified, outdated, and unsupported projections', async () => {
@@ -126,6 +132,53 @@ suite('RepositoryContextSkillProjectionMainService', () => {
 		assert.strictEqual(
 			(await service.inspect({ ...request, manifest: restored.manifest })).state,
 			'copied'
+		);
+	});
+
+	test('materializes a client overlay only in its target', async () => {
+		const baseRequest = await createRequest();
+		const overlayDirectory = join(baseRequest.source.fsPath, '.repository-context', 'overlays');
+		const overlay = join(overlayDirectory, 'claude-code.yaml');
+		await fs.mkdir(overlayDirectory, { recursive: true });
+		await fs.writeFile(overlay, 'disable-model-invocation: true\n');
+		const claudeRequest: ISkillProjectionRequest = {
+			...baseRequest,
+			client: 'claude-code',
+			target: URI.file(join(fixtureRoot, 'claude', 'review')),
+			overlay: URI.file(overlay),
+		};
+
+		const projected = await service.project(claudeRequest);
+		assert.strictEqual(projected.state, 'copied');
+		assert.strictEqual(projected.mode, 'managed-copy');
+		assert.strictEqual(projected.manifest?.overlay, overlay);
+		assert.match(
+			await fs.readFile(join(claudeRequest.target.fsPath, 'SKILL.md'), 'utf8'),
+			/disable-model-invocation: true/
+		);
+		assert.strictEqual(
+			await fs.readFile(join(baseRequest.source.fsPath, 'SKILL.md'), 'utf8'),
+			'---\nname: review\ndescription: Review changes.\n---\n\n# Review\n'
+		);
+		assert.strictEqual(
+			await fs.stat(join(claudeRequest.target.fsPath, '.repository-context', 'overlays'))
+				.then(() => true, () => false),
+			false
+		);
+		await assert.rejects(
+			() => service.importChanges({ ...claudeRequest, manifest: projected.manifest }),
+			/cannot be imported/
+		);
+
+		const cursorRequest: ISkillProjectionRequest = {
+			...baseRequest,
+			client: 'cursor',
+			target: URI.file(join(fixtureRoot, 'cursor', 'review')),
+		};
+		await service.project(cursorRequest);
+		assert.doesNotMatch(
+			await fs.readFile(join(cursorRequest.target.fsPath, 'SKILL.md'), 'utf8'),
+			/disable-model-invocation: true/
 		);
 	});
 });

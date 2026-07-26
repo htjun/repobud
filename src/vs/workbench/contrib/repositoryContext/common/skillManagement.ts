@@ -7,6 +7,7 @@ import { Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import {
+	SkillProjectionClient,
 	SkillProjectionMode,
 	SkillProjectionState,
 } from '../../../../platform/repositoryContext/common/skillProjection.js';
@@ -20,14 +21,25 @@ export type SkillOrigin = 'global' | 'repository' | 'plugin';
 export type SkillOverride = 'inherit' | CanonicalActivation;
 export type SkillSection = 'enabled' | 'available' | 'needsAttention';
 export type SkillActivationSource = 'default' | 'global' | 'repository';
-export type SkillClient = 'codex';
+export type SkillClient = SkillProjectionClient;
+export type SkillClientCompatibility = 'compatible' | 'partial' | 'unsupported';
+
+export interface ISkillClientCompatibility {
+	readonly client: SkillClient;
+	readonly status: SkillClientCompatibility;
+	readonly reason?: string;
+	readonly overlay?: URI;
+}
 
 export interface ISkillClientProjection {
 	readonly client: SkillClient;
+	readonly compatibility: SkillClientCompatibility;
 	readonly state: SkillProjectionState;
 	readonly mode?: SkillProjectionMode;
 	readonly target?: URI;
+	readonly overlay?: URI;
 	readonly detail?: string;
+	readonly compatibilityReason?: string;
 }
 
 export interface ICanonicalSkillDefinition {
@@ -36,6 +48,7 @@ export interface ICanonicalSkillDefinition {
 	readonly description: string;
 	readonly origin: SkillOrigin;
 	readonly resource: URI;
+	readonly compatibility?: readonly ISkillClientCompatibility[];
 	readonly issue?: string;
 }
 
@@ -49,6 +62,7 @@ export interface IEffectiveSkill {
 	readonly repositoryOverride: SkillOverride;
 	readonly section: SkillSection;
 	readonly definitionResource?: URI;
+	readonly compatibility: readonly ISkillClientCompatibility[];
 	readonly projections: readonly ISkillClientProjection[];
 	readonly issue?: string;
 }
@@ -78,9 +92,9 @@ export interface IContextSkillService {
 	refresh(): Promise<void>;
 	setRepositoryOverride(skillId: string, override: SkillOverride): Promise<void>;
 	setGlobalActivation(skillId: string, activation: CanonicalActivation): Promise<void>;
-	projectToCodex(skillId: string): Promise<void>;
-	importCodexChanges(skillId: string): Promise<void>;
-	restoreCodexProjection(skillId: string): Promise<void>;
+	project(skillId: string, client: SkillClient): Promise<void>;
+	importChanges(skillId: string, client: SkillClient): Promise<void>;
+	restoreProjection(skillId: string, client: SkillClient): Promise<void>;
 }
 
 const originOrder: readonly SkillOrigin[] = ['repository', 'global', 'plugin'];
@@ -167,6 +181,7 @@ export function resolveEffectiveSkills(
 			...activation,
 			section,
 			definitionResource: preferred?.resource,
+			compatibility: preferred?.compatibility ?? [],
 			projections: [],
 			issue: issues.length > 0 ? issues.join(' ') : undefined,
 		});

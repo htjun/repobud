@@ -69,11 +69,12 @@ class TestSkillProjectionService implements IRepositoryContextSkillProjectionSer
 			mode: 'managed-copy',
 			manifest: {
 				version: 1,
-				client: 'codex',
+				client: request.client,
 				skillId: request.skillId,
 				mode: 'managed-copy',
 				source: request.source.fsPath,
 				target: request.target.fsPath,
+				overlay: request.overlay?.fsPath,
 				sourceHash: 'a'.repeat(64),
 				outputHash: 'a'.repeat(64),
 			},
@@ -138,7 +139,7 @@ suite('ContextSkillService', () => {
 		await fileService.createFolder(directory);
 		const frontmatter = [
 			'---',
-			`name: ${name}`,
+			`name: ${id}`,
 			...(description ? [`description: ${description}`] : []),
 			'---',
 			'',
@@ -230,7 +231,7 @@ suite('ContextSkillService', () => {
 		);
 	});
 
-	test('resolves Codex targets and keeps managed-copy manifests in machine storage', async () => {
+	test('resolves client targets and keeps managed-copy manifests in machine storage', async () => {
 		await Promise.all([
 			writeSkill(joinPath(globalRepository, 'skills'), 'review', 'Review', 'Review changes.'),
 			writeSkill(
@@ -253,16 +254,28 @@ suite('ContextSkillService', () => {
 		const requestedTargets = projectionService.requests.map(request => request.target.path);
 		assert.ok(requestedTargets.includes('/home/.agents/skills/review'));
 		assert.ok(requestedTargets.includes('/project/.agents/skills/release'));
+		assert.ok(requestedTargets.includes('/home/.claude/skills/review'));
+		assert.ok(requestedTargets.includes('/project/.claude/skills/release'));
+		assert.strictEqual(
+			projectionService.requests.find(request => request.client === 'cursor' && request.skillId === 'review')
+				?.target.path,
+			'/home/.agents/skills/review'
+		);
+		assert.strictEqual(
+			projectionService.requests.find(request => request.client === 'cursor' && request.skillId === 'release')
+				?.target.path,
+			'/project/.agents/skills/release'
+		);
 		assert.strictEqual(
 			skillService.snapshot.sections.enabled.find(skill => skill.id === 'review')
-				?.projections[0].state,
+				?.projections.find(projection => projection.client === 'codex')?.state,
 			'missing'
 		);
 
-		await skillService.projectToCodex('review');
+		await skillService.project('review', 'codex');
 		assert.strictEqual(
 			skillService.snapshot.sections.enabled.find(skill => skill.id === 'review')
-				?.projections[0].state,
+				?.projections.find(projection => projection.client === 'codex')?.state,
 			'copied'
 		);
 		const stored = storageService.getObject(
@@ -284,13 +297,73 @@ suite('ContextSkillService', () => {
 		await skillService.refresh();
 		assert.strictEqual(
 			skillService.snapshot.sections.enabled.find(skill => skill.id === 'review')
-				?.projections[0].state,
+				?.projections.find(projection => projection.client === 'codex')?.state,
 			'modified'
 		);
 
-		await skillService.importCodexChanges('review');
-		await skillService.restoreCodexProjection('review');
+		await skillService.importChanges('review', 'codex');
+		await skillService.restoreProjection('review', 'codex');
 		assert.strictEqual(projectionService.importCount, 1);
 		assert.strictEqual(projectionService.restoreCount, 1);
+	});
+
+	test('validates Agent Skills compatibility and scopes overlays to one client', async () => {
+		const skillDirectory = joinPath(
+			activeRepository,
+			'.repository-context',
+			'skills',
+			'release'
+		);
+		await fileService.createFolder(joinPath(skillDirectory, '.repository-context', 'overlays'));
+		await fileService.writeFile(
+			joinPath(skillDirectory, 'SKILL.md'),
+			VSBuffer.fromString([
+				'---',
+				'name: release',
+				'description: Prepare releases.',
+				'allowed-tools: Read',
+				'---',
+				'',
+				'# Release',
+				'',
+			].join('\n'))
+		);
+		await fileService.writeFile(
+			joinPath(skillDirectory, '.repository-context', 'overlays', 'cursor.yaml'),
+			VSBuffer.fromString('paths: src/**\n')
+		);
+		skillService = disposables.add(new ContextSkillService(
+			fileService,
+			catalogService,
+			canonicalConfigurationService,
+			projectionService,
+			storageService,
+			pathService
+		));
+		await skillService.refresh();
+
+		const skill = skillService.snapshot.sections.enabled.find(candidate => candidate.id === 'release');
+		assert.strictEqual(
+			skill?.projections.find(projection => projection.client === 'claude-code')?.compatibility,
+			'compatible'
+		);
+		assert.strictEqual(
+			skill?.projections.find(projection => projection.client === 'cursor')?.compatibility,
+			'partial'
+		);
+		assert.match(
+			skill?.projections.find(projection => projection.client === 'cursor')?.compatibilityReason ?? '',
+			/allowed-tools/
+		);
+		const cursorRequest = projectionService.requests.find(request => request.client === 'cursor');
+		assert.strictEqual(
+			cursorRequest?.overlay?.path,
+			'/project/.repository-context/skills/release/.repository-context/overlays/cursor.yaml'
+		);
+		assert.strictEqual(cursorRequest?.target.path, '/project/.cursor/skills/release');
+		assert.strictEqual(
+			projectionService.requests.find(request => request.client === 'claude-code')?.overlay,
+			undefined
+		);
 	});
 });

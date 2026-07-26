@@ -26,6 +26,7 @@ import {
 	IEffectiveSkill,
 	ISkillClientProjection,
 	ISkillManagementSnapshot,
+	SkillClient,
 	SkillOrigin,
 	SkillOverride,
 	SkillSection,
@@ -58,6 +59,18 @@ const projectionStateLabels: Readonly<Record<ISkillClientProjection['state'], st
 	modified: localize('repositoryContextSkillProjectionModified', 'Modified'),
 	outdated: localize('repositoryContextSkillProjectionOutdated', 'Outdated'),
 	unsupported: localize('repositoryContextSkillProjectionUnsupported', 'Unsupported'),
+};
+
+const clientLabels: Readonly<Record<SkillClient, string>> = {
+	codex: 'Codex',
+	'claude-code': 'Claude Code',
+	cursor: 'Cursor',
+};
+
+const compatibilityLabels: Readonly<Record<ISkillClientProjection['compatibility'], string>> = {
+	compatible: localize('repositoryContextSkillCompatibilityCompatible', 'Compatible'),
+	partial: localize('repositoryContextSkillCompatibilityPartial', 'Partial'),
+	unsupported: localize('repositoryContextSkillCompatibilityUnsupported', 'Unsupported'),
 };
 
 export class SkillsViewPane extends ViewPane {
@@ -211,7 +224,7 @@ export class SkillsViewPane extends ViewPane {
 			const issue = dom.append(row, dom.$('.repository-context-skill-issue'));
 			issue.textContent = skill.issue;
 		}
-		this.renderCodexProjection(row, skill);
+		this.renderClientProjections(row, skill);
 
 		const controls = dom.append(row, dom.$('.repository-context-skill-overrides'));
 		controls.setAttribute('role', 'group');
@@ -238,46 +251,55 @@ export class SkillsViewPane extends ViewPane {
 		effective.textContent = this.getEffectiveLabel(skill);
 	}
 
-	private renderCodexProjection(row: HTMLElement, skill: IEffectiveSkill): void {
-		const projection = skill.projections.find(candidate => candidate.client === 'codex');
-		if (!projection) {
-			return;
-		}
-
+	private renderClientProjections(row: HTMLElement, skill: IEffectiveSkill): void {
 		const container = dom.append(row, dom.$('.repository-context-skill-projection'));
+		for (const projection of skill.projections) {
+			this.renderClientProjection(container, skill, projection);
+		}
+	}
+
+	private renderClientProjection(
+		container: HTMLElement,
+		skill: IEffectiveSkill,
+		projection: ISkillClientProjection,
+	): void {
+		const client = dom.append(container, dom.$('.repository-context-skill-client-row'));
 		const badge = dom.append(
-			container,
+			client,
 			dom.$(`span.repository-context-skill-client.${projection.state}`)
 		);
 		badge.textContent = localize(
-			'repositoryContextSkillCodexProjectionBadge',
-			'Codex · {0}',
+			'repositoryContextSkillProjectionBadge',
+			'{0} · {1} · {2}',
+			clientLabels[projection.client],
+			compatibilityLabels[projection.compatibility],
 			projectionStateLabels[projection.state]
 		);
-		if (projection.detail) {
-			badge.title = projection.detail;
+		const details = [projection.compatibilityReason, projection.detail].filter(Boolean);
+		if (details.length > 0) {
+			badge.title = details.join(' ');
 		}
 
-		const actions = dom.append(container, dom.$('.repository-context-skill-projection-actions'));
+		const actions = dom.append(client, dom.$('.repository-context-skill-projection-actions'));
 		if (projection.state === 'missing' && skill.activation === 'on' && skill.section !== 'needsAttention') {
 			this.renderProjectionAction(
 				actions,
 				localize('repositoryContextProjectSkillToCodex', 'Project'),
-				() => this.runProjectionAction(() => this.skillService.projectToCodex(skill.id))
+				() => this.runProjectionAction(() => this.skillService.project(skill.id, projection.client))
 			);
 		}
-		if (projection.state === 'modified') {
+		if (projection.state === 'modified' && !projection.overlay) {
 			this.renderProjectionAction(
 				actions,
 				localize('repositoryContextImportCodexSkillChanges', 'Import changes'),
-				() => this.confirmImport(skill)
+				() => this.confirmImport(skill, projection.client)
 			);
 		}
 		if (projection.state === 'modified' || projection.state === 'outdated') {
 			this.renderProjectionAction(
 				actions,
 				localize('repositoryContextRestoreCodexSkillProjection', 'Restore projection'),
-				() => this.confirmRestore(skill)
+				() => this.confirmRestore(skill, projection.client)
 			);
 		}
 	}
@@ -298,7 +320,7 @@ export class SkillsViewPane extends ViewPane {
 		}));
 	}
 
-	private async confirmImport(skill: IEffectiveSkill): Promise<void> {
+	private async confirmImport(skill: IEffectiveSkill, client: SkillClient): Promise<void> {
 		const result = await this.dialogService.confirm({
 			type: 'warning',
 			message: localize(
@@ -307,32 +329,35 @@ export class SkillsViewPane extends ViewPane {
 			),
 			detail: localize(
 				'repositoryContextConfirmImportCodexSkillChangesDetail',
-				'The external Codex copy will replace the canonical content for "{0}".',
-				skill.name
+				'The external {0} copy will replace the canonical content for "{1}".',
+				clientLabels[client],
+				skill.name,
 			),
 			primaryButton: localize('repositoryContextImportChangesPrimaryButton', 'Import changes'),
 		});
 		if (result.confirmed) {
-			await this.runProjectionAction(() => this.skillService.importCodexChanges(skill.id));
+			await this.runProjectionAction(() => this.skillService.importChanges(skill.id, client));
 		}
 	}
 
-	private async confirmRestore(skill: IEffectiveSkill): Promise<void> {
+	private async confirmRestore(skill: IEffectiveSkill, client: SkillClient): Promise<void> {
 		const result = await this.dialogService.confirm({
 			type: 'warning',
 			message: localize(
 				'repositoryContextConfirmRestoreCodexSkillProjection',
-				'Restore the Codex projection from canonical content?'
+				'Restore the {0} projection from canonical content?',
+				clientLabels[client],
 			),
 			detail: localize(
 				'repositoryContextConfirmRestoreCodexSkillProjectionDetail',
-				'External changes in the Codex target for "{0}" will be replaced.',
-				skill.name
+				'External changes in the {0} target for "{1}" will be replaced.',
+				clientLabels[client],
+				skill.name,
 			),
 			primaryButton: localize('repositoryContextRestoreProjectionPrimaryButton', 'Restore projection'),
 		});
 		if (result.confirmed) {
-			await this.runProjectionAction(() => this.skillService.restoreCodexProjection(skill.id));
+			await this.runProjectionAction(() => this.skillService.restoreProjection(skill.id, client));
 		}
 	}
 

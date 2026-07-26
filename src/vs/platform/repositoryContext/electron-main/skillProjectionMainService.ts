@@ -18,6 +18,7 @@ import {
 interface IValidatedProjectionPaths {
 	readonly source: string;
 	readonly target: string;
+	readonly overlay?: string;
 }
 
 export class RepositoryContextSkillProjectionMainService implements IRepositoryContextSkillProjectionService {
@@ -88,7 +89,7 @@ export class RepositoryContextSkillProjectionMainService implements IRepositoryC
 		}
 
 		const [sourceHash, outputHash] = await Promise.all([
-			this.hashDirectory(paths.source),
+			this.hashProjectionInput(paths),
 			this.hashDirectory(paths.target),
 		]);
 		if (outputHash !== manifest.outputHash) {
@@ -138,6 +139,9 @@ export class RepositoryContextSkillProjectionMainService implements IRepositoryC
 	}
 
 	async importChanges(request: ISkillProjectionRequest): Promise<ISkillProjectionResult> {
+		if (request.overlay) {
+			throw new Error('Client-specific overlay projections cannot be imported into shared canonical content.');
+		}
 		const inspection = await this.inspect(request);
 		if (inspection.state === 'linked') {
 			return inspection;
@@ -190,7 +194,7 @@ export class RepositoryContextSkillProjectionMainService implements IRepositoryC
 		paths: IValidatedProjectionPaths,
 		strategy: SkillProjectionStrategy,
 	): Promise<ISkillProjectionResult> {
-		if (strategy === 'prefer-link') {
+		if (strategy === 'prefer-link' && !paths.overlay) {
 			try {
 				await fs.symlink(paths.source, paths.target, 'dir');
 				return { state: 'linked', mode: 'symlink' };
@@ -202,9 +206,9 @@ export class RepositoryContextSkillProjectionMainService implements IRepositoryC
 		}
 
 		try {
-			await fs.cp(paths.source, paths.target, { recursive: true, errorOnExist: true, force: false });
+			await this.copyProjectionInput(paths);
 			const [sourceHash, outputHash] = await Promise.all([
-				this.hashDirectory(paths.source),
+				this.hashProjectionInput(paths),
 				this.hashDirectory(paths.target),
 			]);
 			const manifest: ISkillProjectionManifest = {
@@ -214,6 +218,7 @@ export class RepositoryContextSkillProjectionMainService implements IRepositoryC
 				mode: 'managed-copy',
 				source: paths.source,
 				target: paths.target,
+				overlay: paths.overlay,
 				sourceHash,
 				outputHash,
 			};
@@ -231,7 +236,7 @@ export class RepositoryContextSkillProjectionMainService implements IRepositoryC
 	}
 
 	private async validateRequest(request: ISkillProjectionRequest): Promise<IValidatedProjectionPaths> {
-		if (request.client !== 'codex') {
+		if (!['codex', 'claude-code', 'cursor'].includes(request.client)) {
 			throw new Error(`Unsupported projection client "${request.client}".`);
 		}
 		if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(request.skillId)) {
@@ -260,7 +265,23 @@ export class RepositoryContextSkillProjectionMainService implements IRepositoryC
 		}
 
 		await this.validateSkillDirectory(source);
-		return { source, target };
+
+		let overlay: string | undefined;
+		if (request.overlay) {
+			if (request.overlay.scheme !== Schemas.file) {
+				throw new Error('Skill projection overlays currently support local file resources only.');
+			}
+			overlay = resolve(request.overlay.fsPath);
+			const overlayRoot = join(source, '.repository-context', 'overlays');
+			if (!this.isEqualOrParent(overlayRoot, overlay) || basename(overlay) !== `${request.client}.yaml`) {
+				throw new Error('A client overlay must use the canonical .repository-context/overlays directory.');
+			}
+			const overlayStat = await fs.stat(overlay);
+			if (!overlayStat.isFile()) {
+				throw new Error('The client overlay is not a file.');
+			}
+		}
+		return { source, target, overlay };
 	}
 
 	private async validateSkillDirectory(path: string): Promise<void> {
@@ -291,15 +312,70 @@ export class RepositoryContextSkillProjectionMainService implements IRepositoryC
 		request: ISkillProjectionRequest,
 		paths: IValidatedProjectionPaths,
 	): boolean {
+		const sharesPortableTarget = !paths.overlay &&
+			!manifest.overlay &&
+			['codex', 'cursor'].includes(manifest.client) &&
+			['codex', 'cursor'].includes(request.client);
 		return manifest.version === 1 &&
-			manifest.client === request.client &&
+			(manifest.client === request.client || sharesPortableTarget) &&
 			manifest.skillId === request.skillId &&
 			manifest.mode === 'managed-copy' &&
 			manifest.source === paths.source &&
-			manifest.target === paths.target;
+			manifest.target === paths.target &&
+			manifest.overlay === paths.overlay;
 	}
 
-	private async hashDirectory(root: string): Promise<string> {
+	private async copyProjectionInput(paths: IValidatedProjectionPaths): Promise<void> {
+		const overlayDirectory = join(paths.source, '.repository-context', 'overlays');
+		await fs.cp(paths.source, paths.target, {
+			recursive: true,
+			errorOnExist: true,
+			force: false,
+			filter: path => !this.isEqualOrParent(overlayDirectory, path),
+		});
+		if (paths.overlay) {
+			const [definition, overlay] = await Promise.all([
+				fs.readFile(join(paths.target, 'SKILL.md'), 'utf8'),
+				fs.readFile(paths.overlay, 'utf8'),
+			]);
+			await fs.writeFile(
+				join(paths.target, 'SKILL.md'),
+				this.applyFrontmatterOverlay(definition, overlay),
+				'utf8'
+			);
+		}
+	}
+
+	private applyFrontmatterOverlay(definition: string, overlay: string): string {
+		const opening = definition.match(/^---\r?\n/);
+		if (!opening) {
+			throw new Error('Canonical SKILL.md has no YAML frontmatter.');
+		}
+		const remainder = definition.slice(opening[0].length);
+		const closing = remainder.match(/\r?\n---(?:\r?\n|$)/);
+		if (!closing || closing.index === undefined) {
+			throw new Error('Canonical SKILL.md has no closing YAML frontmatter delimiter.');
+		}
+		const insertAt = opening[0].length + closing.index;
+		return `${definition.slice(0, insertAt)}\n${overlay.trim()}\n${definition.slice(insertAt + 1)}`;
+	}
+
+	private async hashProjectionInput(paths: IValidatedProjectionPaths): Promise<string> {
+		const sharedHash = await this.hashDirectory(
+			paths.source,
+			relativePath => !this.isEqualOrParent('.repository-context/overlays', relativePath)
+		);
+		if (!paths.overlay) {
+			return sharedHash;
+		}
+		return createHash('sha256')
+			.update(sharedHash)
+			.update('\0overlay\0')
+			.update(await fs.readFile(paths.overlay))
+			.digest('hex');
+	}
+
+	private async hashDirectory(root: string, include: (relativePath: string) => boolean = () => true): Promise<string> {
 		const hash = createHash('sha256');
 		const visit = async (directory: string): Promise<void> => {
 			const entries = await fs.readdir(directory, { withFileTypes: true });
@@ -307,6 +383,9 @@ export class RepositoryContextSkillProjectionMainService implements IRepositoryC
 			for (const entry of entries) {
 				const path = join(directory, entry.name);
 				const relativePath = relative(root, path).split(sep).join('/');
+				if (!include(relativePath)) {
+					continue;
+				}
 				const stat = await fs.lstat(path);
 				if (stat.isSymbolicLink()) {
 					hash.update(`link\0${relativePath}\0${await fs.readlink(path)}\0`);

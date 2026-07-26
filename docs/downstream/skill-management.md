@@ -65,3 +65,30 @@ explicitly replaces canonical content with the target after validation. `Restore
 explicitly replaces the target from canonical content. Both operations require confirmation.
 Use `Refresh Skills` after changing a projection outside the app. Restart Codex when its installed
 Skill inventory does not update live.
+
+## Multi-client projection
+
+Canonical definitions follow the strict Agent Skills format: `name` and `description` are required,
+the name matches the directory, and only standard frontmatter fields are accepted. Compatibility
+badges distinguish portable content from standard fields whose behavior a client does not document.
+
+Portable Codex and Cursor projections share `.agents/skills/<skill-id>` because Cursor discovers the
+standard root directly. Repository Context Workbench does not create a redundant `.cursor` copy for
+portable content. Claude Code uses `.claude/skills/<skill-id>`, its documented native root.
+
+Client-only frontmatter lives outside canonical `SKILL.md`:
+
+```text
+<skill-id>/.repository-context/overlays/claude-code.yaml
+<skill-id>/.repository-context/overlays/cursor.yaml
+```
+
+An overlay is validated against that client's documented fields and merged into only the rendered
+client copy. Overlay projections use managed copies so the canonical portable file remains
+unchanged. Cursor overlays use `.cursor/skills/<skill-id>`; the UI reports compatibility limits
+because Cursor does not document duplicate precedence across its standard and native roots.
+
+The release contract is pinned in
+`src/vs/workbench/contrib/repositoryContext/test/fixtures/skillProjectionClients.json`. Current
+source research and remaining uncertainties are recorded in
+`docs/research/claude-code-cursor-skill-contracts.md`.

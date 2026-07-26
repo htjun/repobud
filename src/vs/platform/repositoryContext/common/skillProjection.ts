@@ -8,7 +8,7 @@ import { createDecorator } from '../../instantiation/common/instantiation.js';
 
 export const REPOSITORY_CONTEXT_SKILL_PROJECTION_CHANNEL = 'repositoryContextSkillProjection';
 
-export type SkillProjectionClient = 'codex';
+export type SkillProjectionClient = 'codex' | 'claude-code' | 'cursor';
 export type SkillProjectionMode = 'direct' | 'symlink' | 'managed-copy';
 export type SkillProjectionState = 'missing' | 'linked' | 'copied' | 'modified' | 'outdated' | 'unsupported';
 export type SkillProjectionStrategy = 'prefer-link' | 'managed-copy';
@@ -20,6 +20,7 @@ export interface ISkillProjectionManifest {
 	readonly mode: 'managed-copy';
 	readonly source: string;
 	readonly target: string;
+	readonly overlay?: string;
 	readonly sourceHash: string;
 	readonly outputHash: string;
 }
@@ -29,6 +30,7 @@ export interface ISkillProjectionRequest {
 	readonly skillId: string;
 	readonly source: URI;
 	readonly target: URI;
+	readonly overlay?: URI;
 	readonly manifest?: ISkillProjectionManifest;
 	readonly strategy?: SkillProjectionStrategy;
 }

@@ -171,11 +171,17 @@
 }
 
 .repository-context-skill-projection {
+	display: flex;
+	flex-direction: column;
+	gap: var(--vscode-spacing-size60);
+	margin-top: var(--vscode-spacing-size80);
+}
+
+.repository-context-skill-client-row {
 	align-items: center;
 	display: flex;
 	gap: var(--vscode-spacing-size60);
 	justify-content: space-between;
-	margin-top: var(--vscode-spacing-size80);
 }
 
 .repository-context-skill-client {

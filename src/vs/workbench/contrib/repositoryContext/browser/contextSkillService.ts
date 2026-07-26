@@ -7,7 +7,7 @@ import { Emitter } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { basename, dirname, joinPath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
-import { parseFrontMatter, YamlParseError } from '../../../../base/common/yaml.js';
+import { parse, parseFrontMatter, YamlNode, YamlParseError } from '../../../../base/common/yaml.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import {
@@ -35,16 +35,52 @@ import {
 	IEffectiveSkill,
 	IEffectiveSkillSections,
 	ISkillClientProjection,
+	ISkillClientCompatibility,
 	ISkillManagementSnapshot,
 	REPOSITORY_SKILLS_DIRECTORY,
 	resolveEffectiveSkills,
 	SKILL_DEFINITION_FILE,
+	SkillClient,
 	SkillOrigin,
 	SkillOverride,
 } from '../common/skillManagement.js';
 
 const emptySections = resolveEffectiveSkills([], {}, {});
 const projectionManifestStorageKey = 'repositoryContext.skillProjection.manifests';
+const projectionClients: readonly SkillClient[] = ['codex', 'claude-code', 'cursor'];
+const standardFrontmatterFields = new Set([
+	'name',
+	'description',
+	'license',
+	'compatibility',
+	'metadata',
+	'allowed-tools',
+]);
+const clientUndocumentedStandardFields: Readonly<Record<SkillClient, ReadonlySet<string>>> = {
+	codex: new Set(),
+	'claude-code': new Set(['license', 'compatibility', 'metadata']),
+	cursor: new Set(['license', 'compatibility', 'allowed-tools']),
+};
+const clientOverlayFields: Readonly<Record<SkillClient, ReadonlySet<string>>> = {
+	codex: new Set(),
+	'claude-code': new Set([
+		'when_to_use',
+		'argument-hint',
+		'arguments',
+		'disable-model-invocation',
+		'user-invocable',
+		'disallowed-tools',
+		'model',
+		'effort',
+		'context',
+		'agent',
+		'background',
+		'hooks',
+		'paths',
+		'shell',
+	]),
+	cursor: new Set(['paths', 'disable-model-invocation', 'globs']),
+};
 
 interface IStoredProjectionManifests {
 	readonly version: 1;
@@ -133,7 +169,7 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 			globalConfiguration.skills,
 			repositoryConfiguration.skills
 		);
-		const sections = await this.resolveCodexProjections(resolvedSections, activeRepository);
+		const sections = await this.resolveClientProjections(resolvedSections, activeRepository);
 		if (request !== this.refreshRequest) {
 			return;
 		}
@@ -182,24 +218,26 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 		await this.refresh();
 	}
 
-	async projectToCodex(skillId: string): Promise<void> {
+	async project(skillId: string, client: SkillClient): Promise<void> {
 		const skill = this.getSkill(skillId);
 		if (skill.activation !== 'on' || skill.section === 'needsAttention') {
-			throw new Error('Only an enabled, valid Skill can be projected to Codex.');
+			throw new Error('Only an enabled, valid Skill can be projected.');
 		}
-		await this.runCodexProjectionOperation(skill, request => this.projectionService.project(request));
+		await this.runProjectionOperation(skill, client, request => this.projectionService.project(request));
 	}
 
-	async importCodexChanges(skillId: string): Promise<void> {
-		await this.runCodexProjectionOperation(
+	async importChanges(skillId: string, client: SkillClient): Promise<void> {
+		await this.runProjectionOperation(
 			this.getSkill(skillId),
+			client,
 			request => this.projectionService.importChanges(request)
 		);
 	}
 
-	async restoreCodexProjection(skillId: string): Promise<void> {
-		await this.runCodexProjectionOperation(
+	async restoreProjection(skillId: string, client: SkillClient): Promise<void> {
+		await this.runProjectionOperation(
 			this.getSkill(skillId),
+			client,
 			request => this.projectionService.restore(request)
 		);
 	}
@@ -276,19 +314,39 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 			const frontmatter = parseFrontMatter(content.value.toString(), parseErrors);
 			const name = frontmatter?.getStringValue('name')?.trim();
 			const description = frontmatter?.getStringValue('description')?.trim();
+			const environmentCompatibility = frontmatter?.getStringValue('compatibility')?.trim();
 			const issues = parseErrors.map(error => error.message);
+			const fields = frontmatter?.header?.type === 'map'
+				? frontmatter.header.properties.map(property => property.key.value)
+				: [];
+			const unknownFields = fields.filter(field => !standardFrontmatterFields.has(field));
+			if (unknownFields.length > 0) {
+				issues.push(`Unsupported Agent Skills frontmatter: ${unknownFields.join(', ')}.`);
+			}
 			if (!name) {
 				issues.push('The Skill definition requires a frontmatter name.');
+			} else if (name !== id) {
+				issues.push('The frontmatter name must match the Skill directory name.');
+			} else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) || name.length > 64) {
+				issues.push('The Skill name must follow the Agent Skills identifier format.');
 			}
 			if (!description) {
 				issues.push('The Skill definition requires a frontmatter description.');
+			} else if (description.length > 1024) {
+				issues.push('The Skill description exceeds the Agent Skills 1024-character limit.');
 			}
+			if (environmentCompatibility && environmentCompatibility.length > 500) {
+				issues.push('The Skill compatibility field exceeds the Agent Skills 500-character limit.');
+			}
+			this.validateStandardFrontmatterTypes(frontmatter?.header, issues);
+			const clientCompatibility = await this.resolveClientCompatibility(directory, frontmatter?.header);
 			return {
 				id,
 				name: name || id,
 				description: description || '',
 				origin,
 				resource,
+				compatibility: clientCompatibility,
 				issue: issues.length > 0 ? issues.join(' ') : undefined,
 			};
 		} catch (error) {
@@ -307,12 +365,12 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 		return [...sections.enabled, ...sections.available, ...sections.needsAttention];
 	}
 
-	private async resolveCodexProjections(
+	private async resolveClientProjections(
 		sections: IEffectiveSkillSections,
 		activeRepository: URI | undefined,
 	): Promise<IEffectiveSkillSections> {
 		const resolveSection = (skills: readonly IEffectiveSkill[]) =>
-			Promise.all(skills.map(skill => this.resolveCodexProjection(skill, activeRepository)));
+			Promise.all(skills.map(skill => this.resolveClientProjection(skill, activeRepository)));
 		const [enabled, available, needsAttention] = await Promise.all([
 			resolveSection(sections.enabled),
 			resolveSection(sections.available),
@@ -321,54 +379,75 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 		return { enabled, available, needsAttention };
 	}
 
-	private async resolveCodexProjection(
+	private async resolveClientProjection(
 		skill: IEffectiveSkill,
 		activeRepository: URI | undefined,
 	): Promise<IEffectiveSkill> {
-		let projection: ISkillClientProjection;
-		try {
-			const request = this.createCodexProjectionRequest(skill, activeRepository);
-			if (!request) {
-				projection = {
-					client: 'codex',
-					state: 'unsupported',
-					detail: skill.issue ?? 'The canonical Skill source is unavailable.',
-				};
-			} else {
-				const result = await this.projectionService.inspect(request);
-				projection = this.toClientProjection(result, request.target);
-			}
-		} catch (error) {
-			projection = {
-				client: 'codex',
-				state: 'unsupported',
-				detail: this.toErrorMessage('Cannot inspect Codex projection', error),
+		const projections = await Promise.all(projectionClients.map(async client => {
+			const compatibility = skill.compatibility.find(candidate => candidate.client === client) ?? {
+				client,
+				status: 'unsupported' as const,
+				reason: skill.issue ?? 'The canonical Skill source is unavailable.',
 			};
-		}
+			try {
+				const request = this.createProjectionRequest(skill, activeRepository, compatibility);
+				if (!request) {
+					return {
+						client,
+						compatibility: compatibility.status,
+						state: 'unsupported',
+						overlay: compatibility.overlay,
+						detail: compatibility.reason ?? skill.issue ?? 'The canonical Skill source is unavailable.',
+						compatibilityReason: compatibility.reason,
+					} satisfies ISkillClientProjection;
+				}
+				const result = await this.projectionService.inspect(request);
+				return this.toClientProjection(result, request.target, compatibility);
+			} catch (error) {
+				return {
+					client,
+					compatibility: 'unsupported',
+					state: 'unsupported',
+					overlay: compatibility.overlay,
+					detail: this.toErrorMessage(`Cannot inspect ${client} projection`, error),
+					compatibilityReason: compatibility.reason,
+				} satisfies ISkillClientProjection;
+			}
+		}));
 		return {
 			...skill,
-			projections: [projection],
+			projections,
 		};
 	}
 
-	private createCodexProjectionRequest(
+	private createProjectionRequest(
 		skill: IEffectiveSkill,
 		activeRepository: URI | undefined,
+		compatibility: ISkillClientCompatibility,
 	): ISkillProjectionRequest | undefined {
-		if (skill.section === 'needsAttention' || !skill.definitionResource || !activeRepository) {
+		if (
+			skill.section === 'needsAttention' ||
+			!skill.definitionResource ||
+			!activeRepository ||
+			compatibility.status === 'unsupported'
+		) {
 			return undefined;
 		}
 
 		const source = dirname(skill.definitionResource);
-		const targetRoot = skill.origins[0] === 'repository'
-			? joinPath(activeRepository, '.agents', 'skills')
-			: joinPath(this.pathService.userHome({ preferLocal: true }), '.agents', 'skills');
+		const targetRoot = this.getProjectionTargetRoot(
+			compatibility.client,
+			skill.origins[0] === 'repository',
+			activeRepository,
+			Boolean(compatibility.overlay)
+		);
 		const target = joinPath(targetRoot, skill.id);
 		return {
-			client: 'codex',
+			client: compatibility.client,
 			skillId: skill.id,
 			source,
 			target,
+			overlay: compatibility.overlay,
 			manifest: this.getProjectionManifest(target),
 		};
 	}
@@ -381,26 +460,39 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 		return skill;
 	}
 
-	private async runCodexProjectionOperation(
+	private async runProjectionOperation(
 		skill: IEffectiveSkill,
+		client: SkillClient,
 		operation: (request: ISkillProjectionRequest) => Promise<ISkillProjectionResult>,
 	): Promise<void> {
-		const request = this.createCodexProjectionRequest(skill, this.repositoryCatalogService.activeRepository);
+		const compatibility = skill.compatibility.find(candidate => candidate.client === client);
+		const request = compatibility && this.createProjectionRequest(
+			skill,
+			this.repositoryCatalogService.activeRepository,
+			compatibility
+		);
 		if (!request) {
-			throw new Error(`Skill "${skill.id}" has no compatible canonical source for Codex.`);
+			throw new Error(`Skill "${skill.id}" has no compatible canonical source for ${client}.`);
 		}
 		const result = await operation(request);
 		this.storeProjectionManifest(request.target, result.manifest);
 		await this.refresh();
 	}
 
-	private toClientProjection(result: ISkillProjectionResult, target: URI): ISkillClientProjection {
+	private toClientProjection(
+		result: ISkillProjectionResult,
+		target: URI,
+		compatibility: ISkillClientCompatibility,
+	): ISkillClientProjection {
 		return {
-			client: 'codex',
+			client: compatibility.client,
+			compatibility: compatibility.status,
 			state: result.state,
 			mode: result.mode,
 			target,
+			overlay: compatibility.overlay,
 			detail: result.detail,
+			compatibilityReason: compatibility.reason,
 		};
 	}
 
@@ -447,13 +539,98 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 		}
 		const candidate = value as Partial<ISkillProjectionManifest>;
 		return candidate.version === 1 &&
-			candidate.client === 'codex' &&
+			projectionClients.includes(candidate.client as SkillClient) &&
 			typeof candidate.skillId === 'string' &&
 			candidate.mode === 'managed-copy' &&
 			typeof candidate.source === 'string' &&
 			typeof candidate.target === 'string' &&
+			(candidate.overlay === undefined || typeof candidate.overlay === 'string') &&
 			typeof candidate.sourceHash === 'string' &&
 			typeof candidate.outputHash === 'string';
+	}
+
+	private async resolveClientCompatibility(
+		directory: URI,
+		header: YamlNode | undefined,
+	): Promise<ISkillClientCompatibility[]> {
+		const fields = header?.type === 'map'
+			? header.properties.map(property => property.key.value)
+			: [];
+		return Promise.all(projectionClients.map(async client => {
+			const overlay = joinPath(directory, '.repository-context', 'overlays', `${client}.yaml`);
+			const hasOverlay = await this.fileService.exists(overlay);
+			const overlayIssue = hasOverlay ? await this.validateClientOverlay(overlay, client) : undefined;
+			const unsupportedFields = fields.filter(field => clientUndocumentedStandardFields[client].has(field));
+			return {
+				client,
+				status: overlayIssue
+					? 'unsupported'
+					: unsupportedFields.length > 0 ? 'partial' : 'compatible',
+				reason: overlayIssue ?? (unsupportedFields.length > 0
+					? `${client} does not document support for Agent Skills fields: ${unsupportedFields.join(', ')}.`
+					: undefined),
+				overlay: hasOverlay && !overlayIssue ? overlay : undefined,
+			};
+		}));
+	}
+
+	private async validateClientOverlay(overlay: URI, client: SkillClient): Promise<string | undefined> {
+		const errors: YamlParseError[] = [];
+		const content = await this.fileService.readFile(overlay);
+		const parsed = parse(content.value.toString(), errors);
+		if (errors.length > 0) {
+			return `Invalid ${client} overlay: ${errors.map(error => error.message).join(' ')}`;
+		}
+		if (!parsed || parsed.type !== 'map') {
+			return `The ${client} overlay must be a YAML mapping.`;
+		}
+		const unsupported = parsed.properties
+			.map(property => property.key.value)
+			.filter(field => !clientOverlayFields[client].has(field));
+		if (unsupported.length > 0) {
+			return `Unsupported ${client} overlay fields: ${unsupported.join(', ')}.`;
+		}
+		return undefined;
+	}
+
+	private validateStandardFrontmatterTypes(header: YamlNode | undefined, issues: string[]): void {
+		if (!header || header.type !== 'map') {
+			return;
+		}
+		for (const property of header.properties) {
+			const field = property.key.value;
+			if (['name', 'description', 'license', 'compatibility', 'allowed-tools'].includes(field) &&
+				property.value.type !== 'scalar'
+			) {
+				issues.push(`The Agent Skills ${field} field must be a string.`);
+			}
+			if (field === 'metadata') {
+				if (property.value.type !== 'map' ||
+					property.value.properties.some(metadata => metadata.value.type !== 'scalar')
+				) {
+					issues.push('The Agent Skills metadata field must contain only string values.');
+				}
+			}
+		}
+	}
+
+	private getProjectionTargetRoot(
+		client: SkillClient,
+		repositoryScoped: boolean,
+		activeRepository: URI,
+		hasOverlay: boolean,
+	): URI {
+		const root = repositoryScoped
+			? activeRepository
+			: this.pathService.userHome({ preferLocal: true });
+		switch (client) {
+			case 'codex':
+				return joinPath(root, '.agents', 'skills');
+			case 'claude-code':
+				return joinPath(root, '.claude', 'skills');
+			case 'cursor':
+				return joinPath(root, hasOverlay ? '.cursor' : '.agents', 'skills');
+		}
 	}
 
 	private toErrorMessage(context: string, error: unknown): string {
