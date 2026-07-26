@@ -1,5 +1,9 @@
 # Code OSS Downstream Baseline
 
+The downstream product identity is defined by the
+[RepoBud naming contract](naming.md). Code OSS names retained in build paths or upstream fixtures
+are implementation details rather than user-facing product identity.
+
 ## Pinned source
 
 | Field | Value |
@@ -62,7 +66,7 @@ npm run package:macos
 ```
 
 The package is written to
-`../VSCode-darwin-arm64/Repository Context Workbench.app`. The command verifies the bundle name,
+`../VSCode-darwin-arm64/RepoBud.app`. The command verifies the bundle name,
 identifier, product metadata, architecture, and source commit before succeeding. Re-run the
 verification without rebuilding with:
 
@@ -77,8 +81,8 @@ npm run preview
 ```
 
 The preview command refuses a missing, incorrectly branded, or stale package, opens the packaged
-Repository Context Workbench, and keeps product state in
-`~/.repository-context-workbench-preview`. It does not use the upstream development bundle or
+RepoBud, and keeps product state in
+`~/.repobud-preview`. It does not use the upstream development bundle or
 inherit an existing Code OSS profile. Pass a repository path after `--` to open it immediately:
 
 ```bash

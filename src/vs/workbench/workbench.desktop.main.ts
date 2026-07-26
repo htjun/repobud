@@ -13,7 +13,7 @@
 //#region --- workbench common
 
 import './workbench.common.main.js';
-import './contrib/repositoryContext/browser/repositoryContext.contribution.js';
+import './contrib/repoBud/browser/repoBud.contribution.js';
 
 //#endregion
 
@@ -58,8 +58,8 @@ import './services/extensionManagement/electron-browser/extensionManagementServi
 import './services/mcp/electron-browser/mcpGalleryManifestService.js';
 import './services/mcp/electron-browser/mcpWorkbenchManagementService.js';
 import './services/encryption/electron-browser/encryptionService.js';
-import '../platform/repositoryContext/electron-browser/keychainCredentialService.js';
-import '../platform/repositoryContext/electron-browser/pluginPackageService.js';
+import '../platform/repoBud/electron-browser/keychainCredentialService.js';
+import '../platform/repoBud/electron-browser/pluginPackageService.js';
 import './services/imageResize/electron-browser/imageResizeService.js';
 import './services/localTranscription/electron-browser/localTranscriptionService.js';
 import './services/secrets/electron-browser/secretStorageService.js';
@@ -101,8 +101,8 @@ import '../platform/agentHost/browser/agentHostEnablementService.js';
 import './services/browserView/electron-browser/playwrightWorkbenchService.js';
 import './services/process/electron-browser/processService.js';
 import './services/power/electron-browser/powerService.js';
-import './services/repositoryContext/electron-browser/skillProjectionService.js';
-import './services/repositoryContext/electron-browser/mcpHealthService.js';
+import './services/repoBud/electron-browser/skillProjectionService.js';
+import './services/repoBud/electron-browser/mcpHealthService.js';
 
 import { registerSingleton } from '../platform/instantiation/common/extensions.js';
 import { IUserDataInitializationService, UserDataInitializationService } from './services/userData/browser/userDataInit.js';

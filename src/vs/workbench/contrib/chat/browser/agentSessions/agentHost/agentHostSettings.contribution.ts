@@ -49,7 +49,7 @@ class AgentHostSettingsContribution extends Disposable implements IWorkbenchCont
 	}
 }
 
-if (!product.repositoryContextWorkbench?.disableAgentHost) {
+if (!product.repoBud?.disableAgentHost) {
 	registerWorkbenchContribution2(AgentHostSettingsContribution.ID, AgentHostSettingsContribution, WorkbenchPhase.AfterRestored);
 }
 

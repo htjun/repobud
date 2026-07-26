@@ -71,12 +71,12 @@ import { METERED_CONNECTION_CHANNEL } from '../../platform/meteredConnection/com
 import { MeteredConnectionChannel } from '../../platform/meteredConnection/electron-main/meteredConnectionChannel.js';
 import { MeteredConnectionMainService } from '../../platform/meteredConnection/electron-main/meteredConnectionMainService.js';
 import { IProductService } from '../../platform/product/common/productService.js';
-import { IGitHubCredentialService } from '../../platform/repositoryContext/common/githubCredentialService.js';
-import { IKeychainCredentialService } from '../../platform/repositoryContext/common/keychainCredentialService.js';
-import { IRepositoryContextPluginPackageService } from '../../platform/repositoryContext/common/pluginPackage.js';
-import { GitHubCredentialMainService } from '../../platform/repositoryContext/electron-main/githubCredentialMainService.js';
-import { KeychainCredentialMainService } from '../../platform/repositoryContext/electron-main/keychainCredentialMainService.js';
-import { RepositoryContextPluginPackageMainService } from '../../platform/repositoryContext/electron-main/pluginPackageMainService.js';
+import { IGitHubCredentialService } from '../../platform/repoBud/common/githubCredentialService.js';
+import { IKeychainCredentialService } from '../../platform/repoBud/common/keychainCredentialService.js';
+import { IRepoBudPluginPackageService } from '../../platform/repoBud/common/pluginPackage.js';
+import { GitHubCredentialMainService } from '../../platform/repoBud/electron-main/githubCredentialMainService.js';
+import { KeychainCredentialMainService } from '../../platform/repoBud/electron-main/keychainCredentialMainService.js';
+import { RepoBudPluginPackageMainService } from '../../platform/repoBud/electron-main/pluginPackageMainService.js';
 import { getRemoteAuthority } from '../../platform/remote/common/remoteHosts.js';
 import { SharedProcess } from '../../platform/sharedProcess/electron-main/sharedProcess.js';
 import { ISignService } from '../../platform/sign/common/sign.js';
@@ -148,15 +148,15 @@ import { IMcpGatewayService, McpGatewayChannelName } from '../../platform/mcp/co
 import { McpGatewayService } from '../../platform/mcp/node/mcpGatewayService.js';
 import { McpGatewayChannel } from '../../platform/mcp/node/mcpGatewayChannel.js';
 import {
-	IRepositoryContextMcpHealthService,
-	REPOSITORY_CONTEXT_MCP_HEALTH_CHANNEL,
-} from '../../platform/repositoryContext/common/mcpHealth.js';
+	IRepoBudMcpHealthService,
+	REPOBUD_MCP_HEALTH_CHANNEL,
+} from '../../platform/repoBud/common/mcpHealth.js';
 import {
-	IRepositoryContextSkillProjectionService,
-	REPOSITORY_CONTEXT_SKILL_PROJECTION_CHANNEL,
-} from '../../platform/repositoryContext/common/skillProjection.js';
-import { RepositoryContextSkillProjectionMainService } from '../../platform/repositoryContext/electron-main/skillProjectionMainService.js';
-import { RepositoryContextMcpHealthMainService } from '../../platform/repositoryContext/electron-main/mcpHealthMainService.js';
+	IRepoBudSkillProjectionService,
+	REPOBUD_SKILL_PROJECTION_CHANNEL,
+} from '../../platform/repoBud/common/skillProjection.js';
+import { RepoBudSkillProjectionMainService } from '../../platform/repoBud/electron-main/skillProjectionMainService.js';
+import { RepoBudMcpHealthMainService } from '../../platform/repoBud/electron-main/mcpHealthMainService.js';
 import { IWebContentExtractorService } from '../../platform/webContentExtractor/common/webContentExtractor.js';
 import { NativeWebContentExtractorService } from '../../platform/webContentExtractor/electron-main/webContentExtractorService.js';
 import { AgentNetworkFilterService, IAgentNetworkFilterService } from '../../platform/networkFilter/common/networkFilterService.js';
@@ -1198,12 +1198,12 @@ export class CodeApplication extends Disposable {
 		// Encryption
 		services.set(IEncryptionMainService, new SyncDescriptor(EncryptionMainService));
 
-		// Repository Context Credentials
+		// RepoBud Credentials
 		services.set(IKeychainCredentialService, new SyncDescriptor(KeychainCredentialMainService));
 		services.set(IGitHubCredentialService, new SyncDescriptor(GitHubCredentialMainService));
 		services.set(
-			IRepositoryContextPluginPackageService,
-			new SyncDescriptor(RepositoryContextPluginPackageMainService)
+			IRepoBudPluginPackageService,
+			new SyncDescriptor(RepoBudPluginPackageMainService)
 		);
 
 		// Browser View
@@ -1317,14 +1317,14 @@ export class CodeApplication extends Disposable {
 		services.set(INativeMcpDiscoveryHelperService, new SyncDescriptor(NativeMcpDiscoveryHelperService));
 		services.set(IMcpGatewayService, new SyncDescriptor(McpGatewayService));
 
-		// Repository Context
+		// RepoBud
 		services.set(
-			IRepositoryContextSkillProjectionService,
-			new SyncDescriptor(RepositoryContextSkillProjectionMainService)
+			IRepoBudSkillProjectionService,
+			new SyncDescriptor(RepoBudSkillProjectionMainService)
 		);
 		services.set(
-			IRepositoryContextMcpHealthService,
-			new SyncDescriptor(RepositoryContextMcpHealthMainService)
+			IRepoBudMcpHealthService,
+			new SyncDescriptor(RepoBudMcpHealthMainService)
 		);
 
 		// Dev Only: CSS service (for ESM)
@@ -1398,7 +1398,7 @@ export class CodeApplication extends Disposable {
 		const encryptionChannel = ProxyChannel.fromService(accessor.get(IEncryptionMainService), disposables);
 		mainProcessElectronServer.registerChannel('encryption', encryptionChannel);
 
-		// Repository Context Credentials
+		// RepoBud Credentials
 		const keychainCredentialChannel = ProxyChannel.fromService(
 			accessor.get(IKeychainCredentialService),
 			disposables
@@ -1410,10 +1410,10 @@ export class CodeApplication extends Disposable {
 		);
 		mainProcessElectronServer.registerChannel('githubCredential', githubCredentialChannel);
 		const pluginPackageChannel = ProxyChannel.fromService(
-			accessor.get(IRepositoryContextPluginPackageService),
+			accessor.get(IRepoBudPluginPackageService),
 			disposables
 		);
-		mainProcessElectronServer.registerChannel('repositoryContextPluginPackage', pluginPackageChannel);
+		mainProcessElectronServer.registerChannel('repoBudPluginPackage', pluginPackageChannel);
 
 		// Browser View
 		const browserViewChannel = ProxyChannel.fromService(accessor.get(IBrowserViewMainService), disposables);
@@ -1484,21 +1484,21 @@ export class CodeApplication extends Disposable {
 		const mcpDiscoveryChannel = ProxyChannel.fromService(accessor.get(INativeMcpDiscoveryHelperService), disposables);
 		mainProcessElectronServer.registerChannel(NativeMcpDiscoveryHelperChannelName, mcpDiscoveryChannel);
 
-		const repositoryContextSkillProjectionChannel = ProxyChannel.fromService(
-			accessor.get(IRepositoryContextSkillProjectionService),
+		const repoBudSkillProjectionChannel = ProxyChannel.fromService(
+			accessor.get(IRepoBudSkillProjectionService),
 			disposables
 		);
 		mainProcessElectronServer.registerChannel(
-			REPOSITORY_CONTEXT_SKILL_PROJECTION_CHANNEL,
-			repositoryContextSkillProjectionChannel
+			REPOBUD_SKILL_PROJECTION_CHANNEL,
+			repoBudSkillProjectionChannel
 		);
-		const repositoryContextMcpHealthChannel = ProxyChannel.fromService(
-			accessor.get(IRepositoryContextMcpHealthService),
+		const repoBudMcpHealthChannel = ProxyChannel.fromService(
+			accessor.get(IRepoBudMcpHealthService),
 			disposables
 		);
 		mainProcessElectronServer.registerChannel(
-			REPOSITORY_CONTEXT_MCP_HEALTH_CHANNEL,
-			repositoryContextMcpHealthChannel
+			REPOBUD_MCP_HEALTH_CHANNEL,
+			repoBudMcpHealthChannel
 		);
 		const mcpGatewayChannel = this._register(new McpGatewayChannel(mainProcessElectronServer, accessor.get(IMcpGatewayService), accessor.get(ILoggerMainService)));
 		mainProcessElectronServer.registerChannel(McpGatewayChannelName, mcpGatewayChannel);

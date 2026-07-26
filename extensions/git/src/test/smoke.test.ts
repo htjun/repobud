@@ -187,7 +187,7 @@ suite('git smoke test', function () {
 		await repository.dropStash(0);
 		assert.strictEqual(cp.execSync('git stash list', { cwd, encoding: 'utf8' }).trim(), '');
 
-		const worktreePath = fs.mkdtempSync(path.join(os.tmpdir(), 'repository-context-worktree-'));
+		const worktreePath = fs.mkdtempSync(path.join(os.tmpdir(), 'repobud-worktree-'));
 		fs.rmdirSync(worktreePath);
 		temporaryPaths.push(worktreePath);
 		await repository.createWorktree({ path: worktreePath, branch: 'worktree-branch', commitish: 'main' });
@@ -196,7 +196,7 @@ suite('git smoke test', function () {
 		assert.strictEqual(fs.existsSync(worktreePath), false);
 
 		await repository.checkout('main');
-		const remoteRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'repository-context-remote-'));
+		const remoteRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'repobud-remote-'));
 		temporaryPaths.push(remoteRoot);
 		const remotePath = path.join(remoteRoot, 'remote.git');
 		cp.execFileSync('git', ['init', '--bare', remotePath]);

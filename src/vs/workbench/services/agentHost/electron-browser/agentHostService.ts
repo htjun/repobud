@@ -41,7 +41,7 @@ class WorkbenchAgentHostService {
 
 registerSingleton(
 	IAgentHostService,
-	(product.repositoryContextWorkbench?.disableAgentHost
+	(product.repoBud?.disableAgentHost
 		? NullAgentHostService
 		: WorkbenchAgentHostService) as unknown as { new(...args: unknown[]): IAgentHostService },
 	InstantiationType.Delayed,

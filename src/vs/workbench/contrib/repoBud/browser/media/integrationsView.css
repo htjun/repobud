@@ -1,0 +1,403 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.repobud-integrations {
+	box-sizing: border-box;
+	height: 100%;
+	overflow: auto;
+	padding: 12px;
+}
+
+.repobud-integrations-context {
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+	margin-bottom: var(--vscode-spacing-size160);
+	padding-bottom: 12px;
+}
+
+.repobud-integrations-context-label,
+.repobud-integrations-context-path,
+.repobud-integration-description,
+.repobud-integrations-section-empty,
+.repobud-integration-health-detail {
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-fontSize-label2);
+}
+
+.repobud-integrations-context-label {
+	display: block;
+	margin-bottom: var(--vscode-spacing-size40);
+	text-transform: uppercase;
+}
+
+.repobud-integrations-context-name {
+	font-size: 14px;
+	font-weight: var(--vscode-fontWeight-semiBold);
+}
+
+.repobud-integrations-context-path {
+	margin-top: 2px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.repobud-integrations-heading {
+	font-size: 16px;
+	margin: var(--vscode-spacing-size160) 0 0;
+}
+
+.repobud-integrations-error,
+.repobud-integrations-prompt,
+.repobud-integration-issue {
+	border-radius: var(--vscode-cornerRadius-small);
+	margin-bottom: 10px;
+	padding: 8px;
+}
+
+.repobud-integrations-error,
+.repobud-integration-issue {
+	background: var(--vscode-inputValidation-errorBackground);
+	border: 1px solid var(--vscode-inputValidation-errorBorder);
+	color: var(--vscode-inputValidation-errorForeground);
+}
+
+.repobud-integrations-prompt {
+	background: var(--vscode-textBlockQuote-background);
+	border-left: 2px solid var(--vscode-textBlockQuote-border);
+	color: var(--vscode-descriptionForeground);
+}
+
+.repobud-integrations-link,
+.repobud-integration-action {
+	background: transparent;
+	border: 0;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	font-size: var(--vscode-fontSize-label3);
+	padding: 2px;
+}
+
+.repobud-integrations-prompt > .repobud-integrations-link {
+	display: block;
+	margin-top: var(--vscode-spacing-size60);
+}
+
+.repobud-integrations-link:hover,
+.repobud-integration-action:hover {
+	color: var(--vscode-textLink-activeForeground);
+	text-decoration: underline;
+}
+
+.repobud-integrations-section {
+	margin-bottom: 16px;
+}
+
+.repobud-integrations-section-title {
+	align-items: center;
+	display: flex;
+	font-size: var(--vscode-fontSize-label1);
+	justify-content: space-between;
+	margin: 0;
+	padding: var(--vscode-spacing-size60) 0;
+	text-transform: uppercase;
+}
+
+.repobud-integrations-count {
+	background: var(--vscode-badge-background);
+	border-radius: var(--vscode-cornerRadius-large);
+	color: var(--vscode-badge-foreground);
+	font-size: var(--vscode-fontSize-label3);
+	min-width: 16px;
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+	text-align: center;
+}
+
+.repobud-integrations-section-empty {
+	padding: 8px 0;
+}
+
+.repobud-integrations-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.repobud-integration-row {
+	background: var(--vscode-list-inactiveSelectionBackground);
+	border: var(--vscode-strokeThickness) solid transparent;
+	border-radius: var(--vscode-cornerRadius-medium);
+	padding: var(--vscode-spacing-size100);
+}
+
+.repobud-integration-row:hover {
+	border-color: var(--vscode-contrastBorder);
+}
+
+.repobud-integration-summary {
+	align-items: center;
+	display: flex;
+	gap: 6px;
+	justify-content: space-between;
+}
+
+.repobud-integration-title {
+	font-weight: var(--vscode-fontWeight-semiBold);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.repobud-integration-badges,
+.repobud-integration-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--vscode-spacing-size40);
+	justify-content: flex-end;
+}
+
+.repobud-integration-origin,
+.repobud-integration-transport {
+	border: 1px solid var(--vscode-badge-background);
+	border-radius: var(--vscode-cornerRadius-large);
+	color: var(--vscode-descriptionForeground);
+	font-size: 9px;
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+	text-transform: uppercase;
+}
+
+.repobud-integration-origin.repository,
+.repobud-integration-transport.stdio {
+	border-color: var(--vscode-gitDecoration-addedResourceForeground);
+}
+
+.repobud-integration-origin.global,
+.repobud-integration-transport.http {
+	border-color: var(--vscode-charts-blue);
+}
+
+.repobud-integration-origin.plugin {
+	border-color: var(--vscode-charts-purple);
+}
+
+.repobud-integration-description {
+	line-height: 1.35;
+	margin-top: var(--vscode-spacing-size60);
+}
+
+.repobud-integration-issue {
+	font-size: var(--vscode-fontSize-label2);
+	margin: var(--vscode-spacing-size80) 0 0;
+}
+
+.repobud-integration-clients {
+	border: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--vscode-spacing-size80);
+	margin: var(--vscode-spacing-size100) 0 0;
+	padding: 0;
+}
+
+.repobud-integration-clients legend {
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-fontSize-label3);
+	margin-bottom: var(--vscode-spacing-size40);
+}
+
+.repobud-integration-client {
+	align-items: center;
+	display: flex;
+	font-size: var(--vscode-fontSize-label3);
+	gap: var(--vscode-spacing-size40);
+}
+
+.repobud-integration-projections {
+	display: flex;
+	flex-direction: column;
+	gap: var(--vscode-spacing-size60);
+	margin-top: var(--vscode-spacing-size80);
+}
+
+.repobud-integration-projection {
+	align-items: center;
+	display: flex;
+	gap: var(--vscode-spacing-size60);
+	justify-content: space-between;
+}
+
+.repobud-integration-projection-badge {
+	border: 1px solid var(--vscode-descriptionForeground);
+	border-radius: var(--vscode-cornerRadius-large);
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-fontSize-label3);
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+	text-transform: capitalize;
+}
+
+.repobud-integration-projection-badge.projected {
+	border-color: var(--vscode-testing-iconPassed);
+	color: var(--vscode-testing-iconPassed);
+}
+
+.repobud-integration-projection-badge.conflict {
+	border-color: var(--vscode-testing-iconFailed);
+	color: var(--vscode-testing-iconFailed);
+}
+
+.repobud-integration-projection-badge.missing {
+	border-color: var(--vscode-testing-iconQueued);
+	color: var(--vscode-testing-iconQueued);
+}
+
+.repobud-integration-projection-badge.unselected,
+.repobud-integration-projection-badge.unsupported {
+	opacity: 0.7;
+}
+
+.repobud-integration-connections {
+	border-top: 1px solid var(--vscode-sideBarSectionHeader-border);
+	margin-top: var(--vscode-spacing-size100);
+	padding-top: var(--vscode-spacing-size80);
+}
+
+.repobud-integration-connections h4 {
+	font-size: var(--vscode-fontSize-label2);
+	margin: 0 0 var(--vscode-spacing-size80);
+}
+
+.repobud-integration-connection {
+	background: var(--vscode-editorWidget-background);
+	border-radius: var(--vscode-cornerRadius-small);
+	margin-top: var(--vscode-spacing-size60);
+	padding: var(--vscode-spacing-size80);
+}
+
+.repobud-integration-connection-summary {
+	align-items: center;
+	display: flex;
+	justify-content: space-between;
+}
+
+.repobud-integration-connection-label {
+	font-weight: var(--vscode-fontWeight-semiBold);
+}
+
+.repobud-integration-connection-state {
+	border: 1px solid var(--vscode-descriptionForeground);
+	border-radius: var(--vscode-cornerRadius-large);
+	font-size: 9px;
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+	text-transform: uppercase;
+}
+
+.repobud-integration-connection-state.valid {
+	border-color: var(--vscode-testing-iconPassed);
+	color: var(--vscode-testing-iconPassed);
+}
+
+.repobud-integration-connection-state.expired,
+.repobud-integration-connection-state.rejected,
+.repobud-integration-connection-state.missing,
+.repobud-integration-connection-state.identityMismatch {
+	border-color: var(--vscode-testing-iconFailed);
+	color: var(--vscode-testing-iconFailed);
+}
+
+.repobud-integration-connection-detail,
+.repobud-integration-connection-selected {
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-fontSize-label3);
+	margin-top: var(--vscode-spacing-size40);
+}
+
+.repobud-integration-connection-issue {
+	border-left: 2px solid var(--vscode-testing-iconFailed);
+	color: var(--vscode-testing-iconFailed);
+	font-size: var(--vscode-fontSize-label2);
+	padding-left: var(--vscode-spacing-size60);
+}
+
+.repobud-integration-connection-actions {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--vscode-spacing-size40);
+	justify-content: flex-end;
+	margin-top: var(--vscode-spacing-size60);
+}
+
+.repobud-integration-overrides {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	margin-top: var(--vscode-spacing-size100);
+}
+
+.repobud-integration-override {
+	background: var(--vscode-button-secondaryBackground);
+	border: 1px solid var(--vscode-button-border, transparent);
+	color: var(--vscode-button-secondaryForeground);
+	cursor: pointer;
+	font-size: var(--vscode-fontSize-label3);
+	padding: 4px 6px;
+}
+
+.repobud-integration-override:first-child {
+	border-radius: var(--vscode-cornerRadius-small) 0 0 var(--vscode-cornerRadius-small);
+}
+
+.repobud-integration-override:last-child {
+	border-radius: 0 var(--vscode-cornerRadius-small) var(--vscode-cornerRadius-small) 0;
+}
+
+.repobud-integration-override.selected {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+
+.repobud-integration-health {
+	border-left: 2px solid var(--vscode-descriptionForeground);
+	margin-top: var(--vscode-spacing-size100);
+	padding-left: var(--vscode-spacing-size80);
+}
+
+.repobud-integration-health.healthy {
+	border-left-color: var(--vscode-testing-iconPassed);
+}
+
+.repobud-integration-health.unreachable {
+	border-left-color: var(--vscode-testing-iconFailed);
+}
+
+.repobud-integration-health-label {
+	font-size: var(--vscode-fontSize-label3);
+	font-weight: var(--vscode-fontWeight-semiBold);
+}
+
+.repobud-integration-health-detail {
+	margin-top: var(--vscode-spacing-size20);
+}
+
+.repobud-integration-actions {
+	margin-top: var(--vscode-spacing-size100);
+}
+
+.repobud-integration-action:disabled,
+.repobud-integration-override:disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+
+.repobud-integrations-link:focus-visible,
+.repobud-integration-action:focus-visible,
+.repobud-integration-override:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+
+.repobud-integrations-empty {
+	color: var(--vscode-descriptionForeground);
+	padding: 20px 8px;
+	text-align: center;
+}

@@ -31,7 +31,7 @@ for (const command of [...excludedCommands.keys(), ...internalCommands]) {
 	assert.ok(commandSet.has(command), `Policy references missing command: ${command}`);
 }
 
-const blockedCommands = new Set(product.repositoryContextWorkbench?.blockedCommandIds ?? []);
+const blockedCommands = new Set(product.repoBud?.blockedCommandIds ?? []);
 for (const command of excludedCommands.keys()) {
 	assert.ok(blockedCommands.has(command), `Excluded command is not blocked by the product: ${command}`);
 }

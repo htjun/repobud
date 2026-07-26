@@ -5,7 +5,7 @@ Research snapshot: 2026-07-26
 Scope: current first-party documentation, specifications, source code, and
 release metadata for Codex, Claude Code, and Cursor plugins. This note covers
 the contracts needed to import a local directory or pinned Git source into the
-Repository Context Workbench. It does not treat community tools or observed
+RepoBud. It does not treat community tools or observed
 client behavior as a stable contract.
 
 ## Decision summary

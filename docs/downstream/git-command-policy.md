@@ -1,7 +1,7 @@
 # Git Command Policy
 
 The built-in Git manifest is the authoritative command declaration list for the pinned downstream
-baseline. Repository Context classifies every declared `git.*` command as:
+baseline. RepoBud classifies every declared `git.*` command as:
 
 - **supported** — a user-facing Git operation retained by the focused product;
 - **internal** — a helper command retained for SCM, diff, or extension API implementation; or

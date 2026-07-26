@@ -1,6 +1,6 @@
 # macOS Release Contract
 
-Repository Context Workbench v1 is a directly distributed, Apple-silicon macOS application. A
+RepoBud v1 is a directly distributed, Apple-silicon macOS application. A
 locally packaged app is a preview artifact; it is not a release until the signing, notarization,
 distribution, and minimum-OS gates below pass.
 
@@ -18,7 +18,7 @@ npm run preview -- /path/to/repository
 ```
 
 The package command produces
-`../VSCode-darwin-arm64/Repository Context Workbench.app`, sets the declared macOS floor, removes
+`../VSCode-darwin-arm64/RepoBud.app`, sets the declared macOS floor, removes
 unused camera, microphone, audio-capture, and Apple Events privacy declarations, applies an ad-hoc
 signature for local integrity, and verifies:
 
@@ -47,7 +47,7 @@ outside an exact validated fixture is not implied.
 | MCP | Pin protocol revision `2025-06-18`. |
 
 The adapter fixtures under
-`src/vs/workbench/contrib/repositoryContext/test/fixtures/` are authoritative release evidence.
+`src/vs/workbench/contrib/repoBud/test/fixtures/` are authoritative release evidence.
 Client versions and format revisions must be updated independently.
 
 ## Production publisher prerequisites
@@ -67,7 +67,7 @@ The release owner must provide and approve:
   controlled update feed with rollback, staged rollout, retention, monitoring, and credential
   rotation owners.
 
-The preview identity `dev.repositorycontext.workbench` is not evidence that the final identifier is
+The preview identity `dev.htjun.repobud` is not evidence that the final identifier is
 registered or owned.
 
 ## Signing, notarization, and distribution gate
@@ -80,11 +80,11 @@ log, staple the app and DMG, and recreate the ZIP only after the contained app i
 Run these checks against the exact bytes to be published:
 
 ```bash
-codesign --verify --deep --strict --verbose=2 "Repository Context Workbench.app"
-codesign --display --entitlements :- "Repository Context Workbench.app"
-xcrun stapler validate "Repository Context Workbench.app"
-xcrun stapler validate "Repository Context Workbench.dmg"
-spctl --assess --type execute --verbose=2 "Repository Context Workbench.app"
+codesign --verify --deep --strict --verbose=2 "RepoBud.app"
+codesign --display --entitlements :- "RepoBud.app"
+xcrun stapler validate "RepoBud.app"
+xcrun stapler validate "RepoBud.dmg"
+spctl --assess --type execute --verbose=2 "RepoBud.app"
 ```
 
 On macOS 14 or later, also run `syspolicy_check distribution`. The final manual gate is a
@@ -110,7 +110,7 @@ repository switching, Git review, Skills, client projections, MCP, Connections, 
 
 On failure, the harness deletes the raw fixture tree and retains only a cleared screenshot,
 accessibility snapshot, application/console logs, selected runtime logs, and a manifest under
-`test-results/repository-context-shell/`. Exact fixture tokens, authorization headers,
+`test-results/repobud-shell/`. Exact fixture tokens, authorization headers,
 credential-bearing URLs, temporary paths, and common secret fields are redacted.
 
 The upstream upgrade rehearsal accepts only an exact semantic version whose local

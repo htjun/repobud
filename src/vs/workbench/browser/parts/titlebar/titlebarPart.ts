@@ -499,7 +499,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		this.createTitle();
 
 		// Center-Adjacent Toolbar (e.g., update indicator)
-		if (hasCustomTitlebar(this.configurationService, this.titleBarStyle) && !this.productService.repositoryContextWorkbench?.hideTitleBarActions) {
+		if (hasCustomTitlebar(this.configurationService, this.titleBarStyle) && !this.productService.repoBud?.hideTitleBarActions) {
 			const centerAdjacentToolBarElement = append(this.rightContent, $('div.center-adjacent-toolbar-container'));
 			this.centerAdjacentToolBarElement = centerAdjacentToolBarElement;
 			const centerAdjacentToolBar = this.centerAdjacentToolBarDisposable.add(this.instantiationService.createInstance(MenuWorkbenchToolBar, centerAdjacentToolBarElement, MenuId.TitleBarAdjacentCenter, {
@@ -517,7 +517,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		}
 
 		// Create Toolbar Actions
-		if (hasCustomTitlebar(this.configurationService, this.titleBarStyle) && !this.productService.repositoryContextWorkbench?.hideTitleBarActions) {
+		if (hasCustomTitlebar(this.configurationService, this.titleBarStyle) && !this.productService.repoBud?.hideTitleBarActions) {
 			this.actionToolBarElement = append(this.rightContent, $('div.action-toolbar-container'));
 			this.createActionToolBar();
 			this.createActionToolBarMenus();

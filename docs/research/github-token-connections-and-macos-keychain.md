@@ -31,7 +31,7 @@ GET /user HTTP/1.1
 Accept: application/vnd.github+json
 Authorization: Bearer <token>
 X-GitHub-Api-Version: 2026-03-10
-User-Agent: Repository-Context-Workbench/<version>
+User-Agent: RepoBud/<version>
 ```
 
 GitHub requires a valid `User-Agent`, recommends `application/vnd.github+json`, accepts `Bearer` for these tokens, and recommends an explicit API-version header. See [Getting started with the REST API](https://docs.github.com/en/rest/using-the-rest-api/getting-started-with-the-rest-api?apiVersion=2026-03-10) and [Authenticating to the REST API](https://docs.github.com/en/rest/authentication/authenticating-to-the-rest-api?apiVersion=2026-03-10).
@@ -179,7 +179,7 @@ Recommended item:
 kSecClass        = kSecClassGenericPassword
 kSecAttrService  = "<product-bundle-id>.connections.github"
 kSecAttrAccount  = connectionRef
-kSecAttrLabel    = "Repository Context Workbench — GitHub — <display login>"
+kSecAttrLabel    = "RepoBud — GitHub — <display login>"
 kSecValueData    = UTF-8 token bytes
 ```
 

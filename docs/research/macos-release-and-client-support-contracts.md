@@ -5,7 +5,7 @@ OpenAI, Anthropic, Cursor, Agent Skills, and MCP primary sources only.
 
 ## Release decision
 
-Repository Context Workbench should ship first as a directly distributed,
+RepoBud should ship first as a directly distributed,
 Apple-silicon macOS application. The first public release should require
 macOS 13 or later, even though the current Electron 42 bundle can start on
 macOS 12. This gives the product one stated floor that also satisfies Claude
@@ -18,7 +18,7 @@ Encode the product decision in
 required to run an app ([Apple `LSMinimumSystemVersion`](https://developer.apple.com/documentation/bundleresources/information-property-list/lsminimumsystemversion)).
 
 Do not call a local package a release merely because it launches. The current
-`VSCode-darwin-arm64/Repository Context Workbench.app` is arm64 and declares
+`VSCode-darwin-arm64/RepoBud.app` is arm64 and declares
 `LSMinimumSystemVersion=12.0`, but its top-level signature is ad-hoc, has no
 Team ID, fails strict resource verification, and has no stapled notarization
 ticket. It is a preview artifact.
@@ -108,11 +108,11 @@ entitlement files. Before release:
 5. Validate the exact bytes to be published:
 
    ```bash
-   codesign --verify --deep --strict --verbose=2 "Repository Context Workbench.app"
-   codesign --display --entitlements :- "Repository Context Workbench.app"
-   xcrun stapler validate "Repository Context Workbench.app"
-   xcrun stapler validate "Repository Context Workbench.dmg"
-   spctl --assess --type execute --verbose=2 "Repository Context Workbench.app"
+   codesign --verify --deep --strict --verbose=2 "RepoBud.app"
+   codesign --display --entitlements :- "RepoBud.app"
+   xcrun stapler validate "RepoBud.app"
+   xcrun stapler validate "RepoBud.dmg"
+   spctl --assess --type execute --verbose=2 "RepoBud.app"
    ```
 
    Apple documents the strict `codesign` and `spctl` checks as Gatekeeper
@@ -145,7 +145,7 @@ expects JSON metadata whose update URL resolves to a ZIP archive; a server
 returns `204 No Content` when no update exists
 ([Electron `autoUpdater`](https://www.electronjs.org/docs/latest/api/auto-updater/),
 [Electron update server contract](https://www.electronjs.org/docs/latest/tutorial/updates)).
-Repository Context Workbench retains Code OSS's more specific
+RepoBud retains Code OSS's more specific
 `<updateUrl>/api/update/<asset>/<quality>/<commit>` request shape in
 [`abstractUpdateService.ts`](../../src/vs/platform/update/electron-main/abstractUpdateService.ts)
 and
@@ -238,7 +238,7 @@ Pin format revisions independently of client versions:
 
 The repository currently generates an inherited, disabled agent-host protocol
 client from `@openai/codex 0.142.0`, while repository projection fixtures use
-Codex `0.145.0`. Because `repositoryContextWorkbench.disableAgentHost` is true,
+Codex `0.145.0`. Because `repoBud.disableAgentHost` is true,
 that protocol is not an advertised Workbench feature. Before release, either
 exclude it from the shipped focused surface or align its pin and rerun
 `npm run codex:check-protocol`; do not present the two different pins as one

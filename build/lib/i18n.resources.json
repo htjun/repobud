@@ -203,7 +203,7 @@
 			"project": "vscode-workbench"
 		},
 		{
-			"name": "vs/workbench/contrib/repositoryContext",
+			"name": "vs/workbench/contrib/repoBud",
 			"project": "vscode-workbench"
 		},
 		{

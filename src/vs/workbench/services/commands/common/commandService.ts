@@ -53,7 +53,7 @@ export class CommandService extends Disposable implements ICommandService {
 	async executeCommand<T>(id: string, ...args: unknown[]): Promise<T> {
 		this._logService.trace('CommandService#executeCommand', id);
 
-		const commandPolicy = product.repositoryContextWorkbench;
+		const commandPolicy = product.repoBud;
 		if (commandPolicy?.blockedCommandIds?.includes(id) ||
 			commandPolicy?.blockedCommandPrefixes?.some(prefix => id.startsWith(prefix))) {
 			this._logService.trace('CommandService#executeCommand blocked by product composition', id);

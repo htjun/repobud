@@ -15,7 +15,7 @@ integrations/<integration-id>.json
 Repository definitions live with the project:
 
 ```text
-.repository-context/integrations/<integration-id>.json
+.repobud/integrations/<integration-id>.json
 ```
 
 Each definition uses version `1` and one of two explicit transports:
@@ -54,8 +54,8 @@ Credentials belong to a machine-local Connection, not a portable server definiti
 
 Activation and selected clients resolve independently:
 
-1. A repository override in `.repository-context/config.json`.
-2. The corresponding global value in `repository-context.json`.
+1. A repository override in `.repobud/config.json`.
+2. The corresponding global value in `repobud.json`.
 3. `On` and all supported clients when neither scope supplies a value.
 
 Removing a repository field restores only that inherited field. A disabled server remains in the
@@ -88,7 +88,7 @@ differs from canonical content until the user explicitly confirms replacement. I
 Codex and Cursor remain independently selectable so activation policy is portable, but their
 project adapters report `Unsupported` in this release rather than guessing at undocumented merge
 or toggle behavior. Exact client and protocol pins live in
-`src/vs/workbench/contrib/repositoryContext/test/fixtures/mcpProjectionClients.json`.
+`src/vs/workbench/contrib/repoBud/test/fixtures/mcpProjectionClients.json`.
 
 The primary-source contract review and unresolved client behavior are recorded in
 `docs/research/mcp-client-configuration-contracts.md`.

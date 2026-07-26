@@ -195,7 +195,7 @@ export class ChatAgentToolsContribution extends Disposable implements IWorkbench
 	}
 }
 registerWorkbenchContribution2(ChatAgentToolsContribution.ID, ChatAgentToolsContribution, WorkbenchPhase.AfterRestored);
-if (!product.repositoryContextWorkbench?.disableAgentHost) {
+if (!product.repoBud?.disableAgentHost) {
 	registerWorkbenchContribution2(AgentHostSandboxForwarder.ID, AgentHostSandboxForwarder, WorkbenchPhase.AfterRestored);
 }
 

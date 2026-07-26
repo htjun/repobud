@@ -1,11 +1,11 @@
 # Canonical Configuration
 
-Repository Context uses user-owned Git repositories as the source of truth for portable Skills and
+RepoBud uses user-owned Git repositories as the source of truth for portable Skills and
 Integration activation. The application never commits or pushes these files automatically.
 
 ## Global repository
 
-The selected global configuration repository contains a human-readable `repository-context.json`:
+The selected global configuration repository contains a human-readable `repobud.json`:
 
 ```json
 {
@@ -22,7 +22,7 @@ is stored outside the configuration repository.
 
 ## Repository-local configuration
 
-A project can carry `.repository-context/config.json` with `scope` set to `repository`. This file
+A project can carry `.repobud/config.json` with `scope` set to `repository`. This file
 contains portable capability IDs and `on` or `off` activation values. It contains no absolute
 paths, credentials, caches, health results, or other machine state, so a project can commit it
 normally.

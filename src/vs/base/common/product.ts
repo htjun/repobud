@@ -109,7 +109,7 @@ export interface IProductConfiguration {
 
 	readonly builtInExtensions?: IBuiltInExtension[];
 	readonly excludedSystemExtensions?: readonly string[];
-	readonly repositoryContextWorkbench?: {
+	readonly repoBud?: {
 		readonly disableAgentHost?: boolean;
 		readonly hideTitleBarActions?: boolean;
 		readonly blockedCommandIds?: readonly string[];

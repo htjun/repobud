@@ -1,6 +1,6 @@
 # Plugin packages and lifecycle
 
-Repository Context Workbench treats a Plugin as a secondary installable capability bundle. A
+RepoBud treats a Plugin as a secondary installable capability bundle. A
 Plugin may own Skills, MCP Integration definitions, executable scripts, and non-secret Connection
 requirements. Installation does not activate a repository capability or connect an account.
 
@@ -11,7 +11,7 @@ adapters. The primary-source comparison and pinned client fixtures are recorded 
 
 ## Package manifest
 
-A package root contains `repository-context-plugin.json`:
+A package root contains `repobud-plugin.json`:
 
 ```json
 {
@@ -57,7 +57,7 @@ or Plugin name.
 
 An executable package may be installed without trust, but it remains disabled. Enabling it requires
 an explicit trust grant. Any local change invalidates that grant. An executable update requires a
-new grant before the updated package can remain enabled. Repository Context Workbench does not
+new grant before the updated package can remain enabled. RepoBud does not
 execute Plugin scripts itself.
 
 ## Updates

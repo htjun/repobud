@@ -1,0 +1,287 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.repobud-skills {
+	box-sizing: border-box;
+	height: 100%;
+	overflow: auto;
+	padding: 12px;
+}
+
+.repobud-skills-context {
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+	margin: 0 0 var(--vscode-spacing-size160);
+	padding: 0 0 12px;
+}
+
+.repobud-skills-context-label,
+.repobud-skills-context-path,
+.repobud-skill-description,
+.repobud-skill-effective,
+.repobud-skills-section-empty {
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-fontSize-label2);
+}
+
+.repobud-skills-context-label {
+	display: block;
+	margin-bottom: var(--vscode-spacing-size40);
+	text-transform: uppercase;
+}
+
+.repobud-skills-context-name {
+	font-size: 14px;
+	font-weight: var(--vscode-fontWeight-semiBold);
+}
+
+.repobud-skills-context-path {
+	margin-top: 2px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.repobud-skills-error,
+.repobud-skills-prompt,
+.repobud-skill-issue {
+	border-radius: var(--vscode-cornerRadius-small);
+	margin-bottom: 10px;
+	padding: 8px;
+}
+
+.repobud-skills-error,
+.repobud-skill-issue {
+	background: var(--vscode-inputValidation-errorBackground);
+	border: 1px solid var(--vscode-inputValidation-errorBorder);
+	color: var(--vscode-inputValidation-errorForeground);
+}
+
+.repobud-skills-prompt {
+	background: var(--vscode-textBlockQuote-background);
+	border-left: 2px solid var(--vscode-textBlockQuote-border);
+	color: var(--vscode-descriptionForeground);
+}
+
+.repobud-skills-link {
+	background: transparent;
+	border: 0;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	display: block;
+	margin-top: var(--vscode-spacing-size60);
+	padding: 0;
+}
+
+.repobud-skills-link:hover {
+	color: var(--vscode-textLink-activeForeground);
+	text-decoration: underline;
+}
+
+.repobud-skills-section {
+	margin: 0 0 16px;
+}
+
+.repobud-skills-section-title {
+	align-items: center;
+	display: flex;
+	font-size: var(--vscode-fontSize-label1);
+	justify-content: space-between;
+	margin: 0;
+	padding: var(--vscode-spacing-size60) 0;
+	text-transform: uppercase;
+}
+
+.repobud-skills-count {
+	background: var(--vscode-badge-background);
+	border-radius: var(--vscode-cornerRadius-large);
+	color: var(--vscode-badge-foreground);
+	font-size: var(--vscode-fontSize-label3);
+	min-width: 16px;
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+	text-align: center;
+}
+
+.repobud-skills-section-empty {
+	padding: 8px 0;
+}
+
+.repobud-skills-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.repobud-skill-row {
+	background: var(--vscode-list-inactiveSelectionBackground);
+	border: var(--vscode-strokeThickness) solid transparent;
+	border-radius: var(--vscode-cornerRadius-medium);
+	padding: var(--vscode-spacing-size100);
+}
+
+.repobud-skill-row:hover {
+	border-color: var(--vscode-contrastBorder);
+}
+
+.repobud-skill-summary {
+	align-items: center;
+	display: flex;
+	gap: 6px;
+	justify-content: space-between;
+}
+
+.repobud-skill-title {
+	font-weight: var(--vscode-fontWeight-semiBold);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.repobud-skill-origins {
+	display: flex;
+	flex-shrink: 0;
+	gap: var(--vscode-spacing-size40);
+}
+
+.repobud-skill-origin {
+	border: 1px solid var(--vscode-badge-background);
+	border-radius: var(--vscode-cornerRadius-large);
+	color: var(--vscode-descriptionForeground);
+	font-size: 9px;
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+	text-transform: uppercase;
+}
+
+.repobud-skill-origin.repository {
+	border-color: var(--vscode-gitDecoration-addedResourceForeground);
+}
+
+.repobud-skill-origin.global {
+	border-color: var(--vscode-charts-blue);
+}
+
+.repobud-skill-origin.plugin {
+	border-color: var(--vscode-charts-purple);
+}
+
+.repobud-skill-description {
+	line-height: 1.35;
+	margin-top: var(--vscode-spacing-size60);
+}
+
+.repobud-skill-projection {
+	display: flex;
+	flex-direction: column;
+	gap: var(--vscode-spacing-size60);
+	margin-top: var(--vscode-spacing-size80);
+}
+
+.repobud-skill-client-row {
+	align-items: center;
+	display: flex;
+	gap: var(--vscode-spacing-size60);
+	justify-content: space-between;
+}
+
+.repobud-skill-client {
+	border: 1px solid var(--vscode-charts-blue);
+	border-radius: var(--vscode-cornerRadius-large);
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-fontSize-label3);
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+}
+
+.repobud-skill-client.linked,
+.repobud-skill-client.copied {
+	border-color: var(--vscode-testing-iconPassed);
+	color: var(--vscode-testing-iconPassed);
+}
+
+.repobud-skill-client.modified,
+.repobud-skill-client.outdated {
+	border-color: var(--vscode-testing-iconQueued);
+	color: var(--vscode-testing-iconQueued);
+}
+
+.repobud-skill-client.unsupported {
+	border-color: var(--vscode-testing-iconFailed);
+	color: var(--vscode-testing-iconFailed);
+}
+
+.repobud-skill-projection-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--vscode-spacing-size40);
+	justify-content: flex-end;
+}
+
+.repobud-skill-projection-action {
+	background: transparent;
+	border: 0;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	font-size: var(--vscode-fontSize-label3);
+	padding: 2px;
+}
+
+.repobud-skill-projection-action:hover {
+	color: var(--vscode-textLink-activeForeground);
+	text-decoration: underline;
+}
+
+.repobud-skill-issue {
+	font-size: var(--vscode-fontSize-label2);
+	margin: var(--vscode-spacing-size80) 0 0;
+}
+
+.repobud-skill-overrides {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	margin-top: 8px;
+}
+
+.repobud-skill-override {
+	background: var(--vscode-button-secondaryBackground);
+	border: 1px solid var(--vscode-button-border, transparent);
+	color: var(--vscode-button-secondaryForeground);
+	cursor: pointer;
+	font-size: var(--vscode-fontSize-label3);
+	padding: 4px 6px;
+}
+
+.repobud-skill-override:first-child {
+	border-radius: var(--vscode-cornerRadius-small) 0 0 var(--vscode-cornerRadius-small);
+}
+
+.repobud-skill-override:last-child {
+	border-radius: 0 var(--vscode-cornerRadius-small) var(--vscode-cornerRadius-small) 0;
+}
+
+.repobud-skill-override.selected {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+
+.repobud-skill-override:focus-visible,
+.repobud-skill-projection-action:focus-visible,
+.repobud-skills-link:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+
+.repobud-skill-override:disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+
+.repobud-skill-effective {
+	margin-top: var(--vscode-spacing-size60);
+	text-align: right;
+}
+
+.repobud-skills-empty {
+	color: var(--vscode-descriptionForeground);
+	padding: 20px 8px;
+	text-align: center;
+}

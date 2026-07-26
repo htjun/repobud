@@ -19,8 +19,8 @@ Integration reports `Needs attention` instead of guessing.
 
 The effective Connection resolves in this order:
 
-1. The active repository's opaque Connection reference in `.repository-context/config.json`.
-2. The global default reference in `repository-context.json`.
+1. The active repository's opaque Connection reference in `.repobud/config.json`.
+2. The global default reference in `repobud.json`.
 3. The only compatible machine-local Connection, when exactly one exists.
 
 A repository selection does not modify the global default. Removing the repository selection
