@@ -4,14 +4,19 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../base/common/codicons.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { IConfigurationRegistry, Extensions as ConfigurationExtensions } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
+import { EditorResourceAccessor, SideBySideEditor } from '../../../common/editor.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { Extensions as ViewExtensions, IViewContainersRegistry, IViewsRegistry, ViewContainerLocation } from '../../../common/views.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
+import { IFilesConfigurationService } from '../../../services/filesConfiguration/common/filesConfigurationService.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
@@ -29,6 +34,7 @@ configurationRegistry.registerDefaultConfigurations([{
 		'window.menuBarVisibility': 'hidden',
 		'window.title': '${rootNameShort}',
 		'chat.titleBar.openInAgentsWindow.enabled': false,
+		'files.readonlyInclude': { '**': true },
 		'onboarding.enabled': false,
 		'security.workspace.trust.enabled': false,
 		'workbench.activityBar.location': 'top',
@@ -114,7 +120,7 @@ registerProductArea(
 	localize('repositoryContextIntegrationsWelcome', 'MCP servers, connections, and plugins for the active repository will appear here.')
 );
 
-class RepositoryContextStartupContribution {
+class RepositoryContextStartupContribution extends Disposable {
 
 	static readonly ID = 'workbench.contrib.repositoryContext.startup';
 
@@ -123,8 +129,12 @@ class RepositoryContextStartupContribution {
 		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
 		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 		@IHostService hostService: IHostService,
+		@IEditorService editorService: IEditorService,
+		@IFilesConfigurationService filesConfigurationService: IFilesConfigurationService,
 		@IRepositoryCatalogService _repositoryCatalogService: IRepositoryCatalogService,
 	) {
+		super();
+
 		const folders = workspaceContextService.getWorkspace().folders;
 		if (folders.length > 1) {
 			void hostService.openWindow([{ folderUri: folders[0].uri }], { forceReuseWindow: true });
@@ -135,6 +145,21 @@ class RepositoryContextStartupContribution {
 		layoutService.setPartHidden(true, Parts.PANEL_PART);
 		layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
 		void viewsService.openViewContainer(REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS.sourceControl);
+
+		const enforceActiveEditorReadonly = () => {
+			const resource = EditorResourceAccessor.getOriginalUri(editorService.activeEditor, {
+				supportSideBySide: SideBySideEditor.BOTH,
+			});
+			if (URI.isUri(resource)) {
+				void filesConfigurationService.updateReadonly(resource, true);
+			} else if (resource) {
+				const resources = [resource.primary, resource.secondary].filter(URI.isUri);
+				void filesConfigurationService.updateReadonly(resources, true);
+			}
+		};
+
+		this._register(editorService.onDidActiveEditorChange(enforceActiveEditorReadonly));
+		enforceActiveEditorReadonly();
 	}
 }
 

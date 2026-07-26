@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -23,6 +23,18 @@ function runGit(cwd, args) {
 	if (result.status !== 0) {
 		throw new Error(`git ${args.join(' ')} failed: ${result.stderr || result.stdout}`);
 	}
+	return result.stdout.trim();
+}
+
+async function waitFor(predicate, message) {
+	const deadline = Date.now() + 10_000;
+	while (Date.now() < deadline) {
+		if (await predicate()) {
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+	throw new Error(message);
 }
 
 async function reservePort() {
@@ -97,13 +109,49 @@ async function main() {
 			mkdir(extensionsPath),
 			mkdir(sharedDataPath),
 		]);
+		await mkdir(join(userDataPath, 'User'));
+		await Promise.all([
+			writeFile(
+				join(userDataPath, 'User', 'settings.json'),
+				JSON.stringify({
+					'files.readonlyExclude': { '**': true },
+					'files.readonlyInclude': {},
+					'window.dialogStyle': 'custom',
+				})
+			),
+			writeFile(
+				join(userDataPath, 'User', 'keybindings.json'),
+				JSON.stringify([{
+					key: 'cmd+alt+h',
+					command: 'git.diff.stageHunk',
+					when: 'editorTextFocus && resourceScheme == file',
+				}])
+			),
+		]);
 		runGit(fixturePath, ['init', '-b', 'main']);
 		runGit(fixturePath, ['config', 'user.name', 'Repository Context Smoke']);
 		runGit(fixturePath, ['config', 'user.email', 'smoke@example.invalid']);
-		await writeFile(join(fixturePath, 'README.md'), '# Repository Context Smoke\n');
-		runGit(fixturePath, ['add', 'README.md']);
+		await Promise.all([
+			writeFile(join(fixturePath, 'conflict.txt'), 'base\n'),
+			writeFile(join(fixturePath, 'deleted.txt'), 'base\n'),
+			writeFile(join(fixturePath, 'hunk.txt'), 'base\n'),
+			writeFile(join(fixturePath, 'rename-old.txt'), 'base\n'),
+			writeFile(join(fixturePath, 'selection.txt'), 'base\n'),
+			writeFile(join(fixturePath, 'staged.txt'), 'base\n'),
+			writeFile(join(fixturePath, 'unstaged.txt'), 'base\n'),
+		]);
+		runGit(fixturePath, ['add', '.']);
 		runGit(fixturePath, ['commit', '-m', 'Initial fixture']);
-		await appendFile(join(fixturePath, 'README.md'), '\nModified in the working tree.\n');
+		await Promise.all([
+			appendFile(join(fixturePath, 'staged.txt'), 'staged\n'),
+			appendFile(join(fixturePath, 'unstaged.txt'), 'unstaged\n'),
+			appendFile(join(fixturePath, 'hunk.txt'), 'hunk change\n'),
+			appendFile(join(fixturePath, 'selection.txt'), 'selection change\n'),
+			writeFile(join(fixturePath, 'untracked.txt'), 'untracked\n'),
+			unlink(join(fixturePath, 'deleted.txt')),
+		]);
+		runGit(fixturePath, ['add', 'staged.txt']);
+		runGit(fixturePath, ['mv', 'rename-old.txt', 'rename-new.txt']);
 
 		const cdpPort = await reservePort();
 		child = spawn(executablePath, [
@@ -136,7 +184,13 @@ async function main() {
 		page.on('pageerror', error => consoleErrors.push(error.message));
 
 		await page.getByRole('tablist', { name: 'Active View Switcher' }).waitFor();
-		await page.getByRole('treeitem', { name: 'README.md, Modified' }).waitFor();
+		await page.getByRole('treeitem', { name: /^staged\.txt, Index Modified/ }).waitFor();
+		await page.getByRole('treeitem', { name: /^unstaged\.txt, Modified/ }).waitFor();
+		await page.getByRole('treeitem', { name: /^untracked\.txt, Untracked/ }).waitFor();
+		await page.getByRole('treeitem', { name: /^rename-new\.txt, Index Renamed/ }).waitFor();
+		await page.getByRole('treeitem', { name: /^deleted\.txt, Deleted/ }).waitFor();
+		await page.getByRole('treeitem', { name: /^hunk\.txt, Modified/ }).waitFor();
+		await page.getByRole('treeitem', { name: /^selection\.txt, Modified/ }).waitFor();
 		await page.getByRole('treeitem', { name: /Initial fixture/ }).waitFor();
 
 		assert.equal(await page.getByRole('tab').count(), 3);
@@ -145,6 +199,110 @@ async function main() {
 		assert.equal(await page.getByRole('tab', { name: 'Integrations' }).count(), 1);
 		assert.equal(await page.getByRole('button', { name: 'Generate Commit Message' }).count(), 0);
 		assert.equal(await page.getByRole('button', { name: /^(Agents|Chat|Accounts|Manage)$/ }).count(), 0);
+		await page.getByRole('treeitem', { name: /^staged\.txt, Index Modified/ }).click();
+		await page.locator('.monaco-diff-editor').waitFor();
+		assert.match(await page.getByRole('main').innerText(), /staged\.txt \(Index\)/);
+		await page.getByRole('treeitem', { name: /^unstaged\.txt, Modified/ }).click();
+		await page.locator('.monaco-diff-editor').waitFor();
+		assert.match(await page.getByRole('main').innerText(), /unstaged\.txt \(Working Tree\)/);
+		const diffEditorAutocompleteModes = await page.locator('.monaco-diff-editor .native-edit-context')
+			.evaluateAll(editors => editors.map(editor => editor.getAttribute('aria-autocomplete')));
+		assert.ok(diffEditorAutocompleteModes.length >= 2, 'Expected both sides of the diff editor.');
+		assert.ok(
+			diffEditorAutocompleteModes.every(mode => mode === 'none'),
+			`Diff editor was not read-only: ${diffEditorAutocompleteModes.join(', ')}`
+		);
+		await page.keyboard.press('Meta+W');
+
+		const hunkItem = page.getByRole('treeitem', { name: /^hunk\.txt, Modified/ });
+		await hunkItem.click();
+		await page.locator('.modified-in-monaco-diff-editor .view-line').filter({ hasText: 'hunk change' }).click();
+		await page.keyboard.press('Meta+Alt+H');
+		const stagedHunkItem = page.getByRole('treeitem', { name: /^hunk\.txt, Index Modified/ });
+		await stagedHunkItem.waitFor();
+		await stagedHunkItem.click();
+		await page.locator('.modified-in-monaco-diff-editor .view-line').filter({ hasText: 'hunk change' }).click();
+		await page.keyboard.press('Meta+K');
+		await page.keyboard.press('Meta+N');
+		await hunkItem.waitFor();
+		await page.keyboard.press('Meta+W');
+
+		const selectionItem = page.getByRole('treeitem', { name: /^selection\.txt, Modified/ });
+		await selectionItem.click();
+		await page.locator('.modified-in-monaco-diff-editor .view-line').filter({ hasText: 'selection change' }).click();
+		await page.keyboard.press('Meta+K');
+		await page.keyboard.press('Meta+Alt+S');
+		const stagedSelectionItem = page.getByRole('treeitem', { name: /^selection\.txt, Index Modified/ });
+		await stagedSelectionItem.waitFor();
+		await stagedSelectionItem.click();
+		await page.locator('.modified-in-monaco-diff-editor .view-line').filter({ hasText: 'selection change' }).click();
+		await page.keyboard.press('Meta+K');
+		await page.keyboard.press('Meta+N');
+		await selectionItem.waitFor();
+		await page.keyboard.press('Meta+W');
+
+		let untrackedItem = page.getByRole('treeitem', { name: /^untracked\.txt, Untracked/ });
+		await untrackedItem.hover();
+		await untrackedItem.getByRole('button', { name: 'Stage Changes' }).click();
+		const stagedUntrackedItem = page.getByRole('treeitem', { name: /^untracked\.txt, Index Added/ });
+		await stagedUntrackedItem.waitFor();
+		await stagedUntrackedItem.hover();
+		await stagedUntrackedItem.getByRole('button', { name: 'Unstage Changes' }).click();
+		untrackedItem = page.getByRole('treeitem', { name: /^untracked\.txt, Untracked/ });
+		await untrackedItem.waitFor();
+
+		const unstagedItem = page.getByRole('treeitem', { name: /^unstaged\.txt, Modified/ });
+		await unstagedItem.hover();
+		await unstagedItem.getByRole('button', { name: 'Discard Changes' }).click();
+		const discardDialog = page.getByRole('dialog');
+		await discardDialog.waitFor();
+		await discardDialog.getByRole('button', { name: 'Discard File' }).click();
+		await unstagedItem.waitFor({ state: 'detached' });
+		assert.equal(await readFile(join(fixturePath, 'unstaged.txt'), 'utf8'), 'base\n');
+
+		runGit(fixturePath, ['reset', '--hard', 'HEAD']);
+		runGit(fixturePath, ['clean', '-fd']);
+		await writeFile(join(fixturePath, 'commit-target.txt'), 'commit target\n');
+		runGit(fixturePath, ['add', 'commit-target.txt']);
+		const hookPath = join(fixturePath, '.git', 'hooks', 'pre-commit');
+		await writeFile(hookPath, '#!/bin/sh\necho "hook blocked commit" >&2\nexit 1\n');
+		await chmod(hookPath, 0o755);
+		await page.getByRole('treeitem', { name: /^commit-target\.txt, Index Added/ }).waitFor();
+
+		const commitInput = page.getByRole('treeitem', { name: 'Source Control Input' }).getByRole('textbox');
+		await commitInput.focus();
+		await page.keyboard.type('Smoke commit');
+		const commitButton = page.getByRole('button', { name: 'Commit Changes on "main"' });
+		await commitButton.click();
+		const hookFailureDialog = page.getByRole('dialog');
+		await hookFailureDialog.waitFor();
+		assert.match(await hookFailureDialog.innerText(), /Git: hook blocked commit/);
+		assert.equal(runGit(fixturePath, ['log', '-1', '--pretty=%s']), 'Initial fixture');
+		await page.keyboard.press('Escape');
+
+		await unlink(hookPath);
+		await commitButton.click();
+		await waitFor(
+			() => runGit(fixturePath, ['log', '-1', '--pretty=%s']) === 'Smoke commit',
+			'Commit did not complete after the failing hook was removed.'
+		);
+		await page.getByRole('treeitem', { name: /^commit-target\.txt,/ }).waitFor({ state: 'detached' });
+
+		runGit(fixturePath, ['switch', '-c', 'incoming']);
+		await writeFile(join(fixturePath, 'conflict.txt'), 'incoming\n');
+		runGit(fixturePath, ['add', 'conflict.txt']);
+		runGit(fixturePath, ['commit', '-m', 'Incoming conflict']);
+		runGit(fixturePath, ['switch', 'main']);
+		await writeFile(join(fixturePath, 'conflict.txt'), 'main\n');
+		runGit(fixturePath, ['add', 'conflict.txt']);
+		runGit(fixturePath, ['commit', '-m', 'Main conflict']);
+		const mergeResult = spawnSync('git', ['merge', 'incoming'], { cwd: fixturePath, encoding: 'utf8' });
+		assert.notEqual(mergeResult.status, 0, 'Conflict fixture unexpectedly merged cleanly.');
+		const conflictItem = page.getByRole('treeitem', { name: /^conflict\.txt, Conflict: Both Modified/ });
+		await conflictItem.waitFor();
+		await conflictItem.click({ button: 'right' });
+		await page.getByRole('menuitem', { name: 'Open in External Editor' }).waitFor();
+		await page.keyboard.press('Escape');
 
 		await page.getByRole('button', { name: 'Switch Repository' }).click();
 		await page.getByRole('option', { name: /check fixture,/ }).waitFor();

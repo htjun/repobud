@@ -5,7 +5,7 @@
 
 import 'mocha';
 import assert from 'assert';
-import { workspace, commands, window, Uri, WorkspaceEdit, Range, TextDocument, extensions, TabInputTextDiff } from 'vscode';
+import { workspace, commands, window, Uri, extensions, TabInputTextDiff } from 'vscode';
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -22,19 +22,6 @@ suite('git smoke test', function () {
 
 	function uri(relativePath: string) {
 		return Uri.file(file(relativePath));
-	}
-
-	async function open(relativePath: string) {
-		const doc = await workspace.openTextDocument(uri(relativePath));
-		await window.showTextDocument(doc);
-		return doc;
-	}
-
-	async function type(doc: TextDocument, text: string) {
-		const edit = new WorkspaceEdit();
-		const end = doc.lineAt(doc.lineCount - 1).range.end;
-		edit.replace(doc.uri, new Range(end, end), text);
-		await workspace.applyEdit(edit);
 	}
 
 	let git: API;
@@ -70,25 +57,22 @@ suite('git smoke test', function () {
 	test('reflects working tree changes', async function () {
 		await commands.executeCommand('workbench.view.scm');
 
-		const appjs = await open('app.js');
-		await type(appjs, ' world');
-		await appjs.save();
+		const appjs = uri('app.js');
+		fs.appendFileSync(appjs.fsPath, ' world');
 		await repository.status();
 
 		assert.strictEqual(repository.state.workingTreeChanges.length, 1);
-		assert.strictEqual(repository.state.workingTreeChanges[0].uri.path, appjs.uri.path);
+		assert.strictEqual(repository.state.workingTreeChanges[0].uri.path, appjs.path);
 		assert.strictEqual(repository.state.workingTreeChanges[0].status, Status.MODIFIED);
 
-		fs.writeFileSync(file('newfile.txt'), '');
-		const newfile = await open('newfile.txt');
-		await type(newfile, 'hey there');
-		await newfile.save();
+		const newfile = uri('newfile.txt');
+		fs.writeFileSync(newfile.fsPath, 'hey there');
 		await repository.status();
 
 		assert.strictEqual(repository.state.workingTreeChanges.length, 2);
-		assert.strictEqual(repository.state.workingTreeChanges[0].uri.path, appjs.uri.path);
+		assert.strictEqual(repository.state.workingTreeChanges[0].uri.path, appjs.path);
 		assert.strictEqual(repository.state.workingTreeChanges[0].status, Status.MODIFIED);
-		assert.strictEqual(repository.state.workingTreeChanges[1].uri.path, newfile.uri.path);
+		assert.strictEqual(repository.state.workingTreeChanges[1].uri.path, newfile.path);
 		assert.strictEqual(repository.state.workingTreeChanges[1].status, Status.UNTRACKED);
 	});
 

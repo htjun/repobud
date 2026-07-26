@@ -1376,6 +1376,22 @@ export class CommandCenter {
 		}
 	}
 
+	@command('git.openFileInExternalEditor')
+	async openFileInExternalEditor(arg?: Resource | Uri): Promise<void> {
+		let uri: Uri | undefined;
+		if (arg instanceof Resource) {
+			uri = arg.resourceUri;
+		} else if (arg instanceof Uri) {
+			uri = arg;
+		} else {
+			uri = this.getSCMResource()?.resourceUri;
+		}
+
+		if (uri) {
+			await env.openExternal(uri);
+		}
+	}
+
 	@command('git.openFile2')
 	async openFile2(arg?: Resource | Uri, ...resourceStates: SourceControlResourceState[]): Promise<void> {
 		this.openFile(arg, ...resourceStates);

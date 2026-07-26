@@ -173,6 +173,12 @@
         "icon": "$(go-to-file)"
       },
       {
+        "command": "git.openFileInExternalEditor",
+        "title": "%command.openFileInExternalEditor%",
+        "category": "Git",
+        "icon": "$(link-external)"
+      },
+      {
         "command": "git.openHEADFile",
         "title": "%command.openHEADFile%",
         "category": "Git"
@@ -2444,6 +2450,11 @@
           "command": "git.openFile",
           "when": "scmProvider == git && scmResourceGroup == merge",
           "group": "navigation"
+        },
+        {
+          "command": "git.openFileInExternalEditor",
+          "when": "scmProvider == git && scmResourceGroup == merge",
+          "group": "2_view@0"
         },
         {
           "command": "git.stage",
