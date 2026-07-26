@@ -18,6 +18,7 @@ import {
 } from '../../../../platform/repositoryContext/common/skillProjection.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IPathService } from '../../../services/path/common/pathService.js';
+import { IInstalledPluginPackage } from '../../../../platform/repositoryContext/common/pluginPackage.js';
 import {
 	CanonicalActivation,
 	createCanonicalConfiguration,
@@ -28,6 +29,7 @@ import {
 	REPOSITORY_CONFIGURATION_FILE,
 } from '../common/canonicalConfiguration.js';
 import { IRepositoryCatalogService } from '../common/repositoryCatalog.js';
+import { IContextPluginService } from '../common/pluginManagement.js';
 import {
 	GLOBAL_SKILLS_DIRECTORY,
 	ICanonicalSkillDefinition,
@@ -103,6 +105,7 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 		@IRepositoryContextSkillProjectionService private readonly projectionService: IRepositoryContextSkillProjectionService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IPathService private readonly pathService: IPathService,
+		@IContextPluginService private readonly pluginService: IContextPluginService,
 	) {
 		super();
 		this._snapshot = {
@@ -116,6 +119,7 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 
 		this._register(repositoryCatalogService.onDidChange(() => void this.refresh()));
 		this._register(canonicalConfigurationService.onDidChangeGlobalRepository(() => void this.refresh()));
+		this._register(pluginService.onDidChange(() => void this.refresh()));
 		this._register(fileService.onDidFilesChange(event => {
 			const globalRepository = this.canonicalConfigurationService.globalRepository;
 			const activeRepository = this.repositoryCatalogService.activeRepository;
@@ -153,19 +157,20 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 		const errors: string[] = [];
 		const globalConfiguration = await this.readGlobalConfiguration(errors);
 		const repositoryConfiguration = await this.readRepositoryConfiguration(activeRepository, errors);
-		const [globalDefinitions, repositoryDefinitions] = await Promise.all([
+		const [globalDefinitions, repositoryDefinitions, pluginDefinitions] = await Promise.all([
 			this.discoverSkills(globalRepository && joinPath(globalRepository, GLOBAL_SKILLS_DIRECTORY), 'global'),
 			this.discoverSkills(
 				activeRepository && joinPath(activeRepository, REPOSITORY_CONFIGURATION_DIRECTORY, REPOSITORY_SKILLS_DIRECTORY),
 				'repository'
 			),
+			this.discoverPluginSkills(),
 		]);
 		if (request !== this.refreshRequest) {
 			return;
 		}
 
 		const resolvedSections = resolveEffectiveSkills(
-			[...globalDefinitions, ...repositoryDefinitions],
+			[...globalDefinitions, ...repositoryDefinitions, ...pluginDefinitions],
 			globalConfiguration.skills,
 			repositoryConfiguration.skills
 		);
@@ -294,9 +299,27 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 		}
 	}
 
-	private async readSkillDefinition(directory: URI, origin: SkillOrigin): Promise<ICanonicalSkillDefinition> {
+	private async discoverPluginSkills(): Promise<ICanonicalSkillDefinition[]> {
+		const definitions = await Promise.all(this.pluginService.snapshot.installed.flatMap(plugin =>
+			plugin.manifest.skills.map(skill =>
+				this.readSkillDefinition(joinPath(plugin.resource, skill), 'plugin', plugin)
+			)
+		));
+		return definitions.sort((left, right) => left.id.localeCompare(right.id));
+	}
+
+	private async readSkillDefinition(
+		directory: URI,
+		origin: SkillOrigin,
+		plugin?: IInstalledPluginPackage,
+	): Promise<ICanonicalSkillDefinition> {
 		const id = basename(directory);
 		const resource = joinPath(directory, SKILL_DEFINITION_FILE);
+		const pluginState = plugin ? {
+			id: plugin.manifest.id,
+			enabled: plugin.enabled,
+			trusted: plugin.trusted,
+		} : undefined;
 		if (!await this.fileService.exists(resource)) {
 			return {
 				id,
@@ -304,6 +327,7 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 				description: '',
 				origin,
 				resource,
+				plugin: pluginState,
 				issue: `${SKILL_DEFINITION_FILE} is missing.`,
 			};
 		}
@@ -346,6 +370,7 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 				description: description || '',
 				origin,
 				resource,
+				plugin: pluginState,
 				compatibility: clientCompatibility,
 				issue: issues.length > 0 ? issues.join(' ') : undefined,
 			};
@@ -356,6 +381,7 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 				description: '',
 				origin,
 				resource,
+				plugin: pluginState,
 				issue: this.toErrorMessage(`Cannot read ${SKILL_DEFINITION_FILE}`, error),
 			};
 		}

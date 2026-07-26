@@ -73,8 +73,10 @@ import { MeteredConnectionMainService } from '../../platform/meteredConnection/e
 import { IProductService } from '../../platform/product/common/productService.js';
 import { IGitHubCredentialService } from '../../platform/repositoryContext/common/githubCredentialService.js';
 import { IKeychainCredentialService } from '../../platform/repositoryContext/common/keychainCredentialService.js';
+import { IRepositoryContextPluginPackageService } from '../../platform/repositoryContext/common/pluginPackage.js';
 import { GitHubCredentialMainService } from '../../platform/repositoryContext/electron-main/githubCredentialMainService.js';
 import { KeychainCredentialMainService } from '../../platform/repositoryContext/electron-main/keychainCredentialMainService.js';
+import { RepositoryContextPluginPackageMainService } from '../../platform/repositoryContext/electron-main/pluginPackageMainService.js';
 import { getRemoteAuthority } from '../../platform/remote/common/remoteHosts.js';
 import { SharedProcess } from '../../platform/sharedProcess/electron-main/sharedProcess.js';
 import { ISignService } from '../../platform/sign/common/sign.js';
@@ -1199,6 +1201,10 @@ export class CodeApplication extends Disposable {
 		// Repository Context Credentials
 		services.set(IKeychainCredentialService, new SyncDescriptor(KeychainCredentialMainService));
 		services.set(IGitHubCredentialService, new SyncDescriptor(GitHubCredentialMainService));
+		services.set(
+			IRepositoryContextPluginPackageService,
+			new SyncDescriptor(RepositoryContextPluginPackageMainService)
+		);
 
 		// Browser View
 		services.set(IBrowserViewMainService, new SyncDescriptor(BrowserViewMainService, undefined, false /* proxied to other processes */));
@@ -1403,6 +1409,11 @@ export class CodeApplication extends Disposable {
 			disposables
 		);
 		mainProcessElectronServer.registerChannel('githubCredential', githubCredentialChannel);
+		const pluginPackageChannel = ProxyChannel.fromService(
+			accessor.get(IRepositoryContextPluginPackageService),
+			disposables
+		);
+		mainProcessElectronServer.registerChannel('repositoryContextPluginPackage', pluginPackageChannel);
 
 		// Browser View
 		const browserViewChannel = ProxyChannel.fromService(accessor.get(IBrowserViewMainService), disposables);

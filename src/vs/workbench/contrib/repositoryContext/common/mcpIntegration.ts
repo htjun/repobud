@@ -64,6 +64,11 @@ export interface ICanonicalMcpDefinitionResource {
 	readonly definition?: ICanonicalMcpDefinition;
 	readonly origin: McpIntegrationOrigin;
 	readonly resource: URI;
+	readonly plugin?: {
+		readonly id: string;
+		readonly enabled: boolean;
+		readonly trusted: boolean;
+	};
 	readonly issue?: string;
 }
 
@@ -263,11 +268,16 @@ export function resolveEffectiveMcpIntegrations(
 			issues.push(`Conflicting canonical MCP definitions exist for "${id}".`);
 		}
 		const preferred = candidates.find(candidate => candidate.origin === 'repository') ?? candidates[0];
+		if (preferred?.plugin && !preferred.plugin.trusted) {
+			issues.push(`Plugin "${preferred.plugin.id}" has untrusted executable content.`);
+		}
 		const origins = [...new Set(candidates.map(candidate => candidate.origin))]
 			.sort((left, right) => originOrder.indexOf(left) - originOrder.indexOf(right));
 		const globalSetting = globalSettings[id];
 		const repositorySetting = repositorySettings[id];
-		const activation = repositorySetting?.activation ?? globalSetting?.activation ?? 'on';
+		const activation = preferred?.plugin && !preferred.plugin.enabled
+			? 'off'
+			: repositorySetting?.activation ?? globalSetting?.activation ?? 'on';
 		const clients = repositorySetting?.clients ?? globalSetting?.clients ?? supportedClients;
 		const section: McpIntegrationSection = issues.length > 0
 			? 'needsAttention'

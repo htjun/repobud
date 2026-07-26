@@ -20,7 +20,7 @@ export const SKILL_DEFINITION_FILE = 'SKILL.md';
 export type SkillOrigin = 'global' | 'repository' | 'plugin';
 export type SkillOverride = 'inherit' | CanonicalActivation;
 export type SkillSection = 'enabled' | 'available' | 'needsAttention';
-export type SkillActivationSource = 'default' | 'global' | 'repository';
+export type SkillActivationSource = 'default' | 'global' | 'repository' | 'plugin';
 export type SkillClient = SkillProjectionClient;
 export type SkillClientCompatibility = 'compatible' | 'partial' | 'unsupported';
 
@@ -48,6 +48,11 @@ export interface ICanonicalSkillDefinition {
 	readonly description: string;
 	readonly origin: SkillOrigin;
 	readonly resource: URI;
+	readonly plugin?: {
+		readonly id: string;
+		readonly enabled: boolean;
+		readonly trusted: boolean;
+	};
 	readonly compatibility?: readonly ISkillClientCompatibility[];
 	readonly issue?: string;
 }
@@ -105,9 +110,17 @@ function compareSkills(left: IEffectiveSkill, right: IEffectiveSkill): number {
 
 function getActivation(
 	id: string,
+	definition: ICanonicalSkillDefinition | undefined,
 	globalSettings: Readonly<Record<string, ICanonicalCapabilitySetting>>,
 	repositorySettings: Readonly<Record<string, ICanonicalCapabilitySetting>>,
 ): Pick<IEffectiveSkill, 'activation' | 'activationSource' | 'repositoryOverride'> {
+	if (definition?.plugin && !definition.plugin.enabled) {
+		return {
+			activation: 'off',
+			activationSource: 'plugin',
+			repositoryOverride: repositorySettings[id]?.activation ?? 'inherit',
+		};
+	}
 	const repositorySetting = repositorySettings[id];
 	if (repositorySetting) {
 		return {
@@ -164,7 +177,10 @@ export function resolveEffectiveSkills(
 		}
 
 		const preferred = candidates.find(candidate => candidate.origin === 'repository') ?? candidates[0];
-		const activation = getActivation(id, globalSettings, repositorySettings);
+		if (preferred?.plugin && !preferred.plugin.trusted) {
+			issues.push(`Plugin "${preferred.plugin.id}" has untrusted executable content.`);
+		}
+		const activation = getActivation(id, preferred, globalSettings, repositorySettings);
 		let section: SkillSection;
 		if (issues.length > 0) {
 			section = 'needsAttention';

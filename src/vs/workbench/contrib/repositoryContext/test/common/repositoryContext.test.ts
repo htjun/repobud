@@ -7,6 +7,7 @@ import assert from 'assert';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { ViewContainerLocation } from '../../../../common/views.js';
+import { parsePluginPackageManifest } from '../../../../../platform/repositoryContext/common/pluginPackage.js';
 import { createCanonicalConfiguration, parseCanonicalConfiguration, serializeCanonicalConfiguration } from '../../common/canonicalConfiguration.js';
 import {
 	ICanonicalMcpDefinitionResource,
@@ -441,5 +442,94 @@ suite('MCP Integration', () => {
 			inspectClaudeMcpProjection(projectClaudeMcpDefinition(existing, definition, true), definition),
 			'projected'
 		);
+	});
+});
+
+suite('Plugin Package', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	const manifest = {
+		schemaVersion: 1,
+		id: 'review-tools',
+		name: 'Review Tools',
+		version: '1.2.3',
+		license: 'MIT',
+		skills: ['skills/review'],
+		integrations: ['integrations/issues.json'],
+		scripts: ['scripts/check.sh'],
+		connections: [{ provider: 'github' }],
+	};
+
+	test('parses a portable authority inventory', () => {
+		const parsed = parsePluginPackageManifest(JSON.stringify(manifest));
+		assert.strictEqual(parsed.id, 'review-tools');
+		assert.deepStrictEqual(parsed.skills, ['skills/review']);
+		assert.deepStrictEqual(parsed.integrations, ['integrations/issues.json']);
+		assert.deepStrictEqual(parsed.scripts, ['scripts/check.sh']);
+		assert.deepStrictEqual(parsed.connections, [{ provider: 'github' }]);
+	});
+
+	test('rejects traversal, unsupported fields, and duplicate requirements', () => {
+		assert.throws(
+			() => parsePluginPackageManifest(JSON.stringify({
+				...manifest,
+				skills: ['../outside'],
+			})),
+			/unsafe relative path/
+		);
+		assert.throws(
+			() => parsePluginPackageManifest(JSON.stringify({
+				...manifest,
+				postinstall: 'scripts/check.sh',
+			})),
+			/unsupported fields: postinstall/
+		);
+		assert.throws(
+			() => parsePluginPackageManifest(JSON.stringify({
+				...manifest,
+				connections: [{ provider: 'github' }, { provider: 'github' }],
+			})),
+			/duplicate providers/
+		);
+	});
+
+	test('keeps Plugin disablement and executable trust separate from capability activation', () => {
+		const skillDefinition: ICanonicalSkillDefinition = {
+			id: 'review',
+			name: 'Review',
+			description: 'Review changes.',
+			origin: 'plugin',
+			resource: URI.file('/plugins/review-tools/skills/review/SKILL.md'),
+			plugin: { id: 'review-tools', enabled: false, trusted: true },
+		};
+		const disabledSkills = resolveEffectiveSkills(
+			[skillDefinition],
+			{ review: { activation: 'on' } },
+			{ review: { activation: 'on' } }
+		);
+		assert.strictEqual(disabledSkills.available[0].activationSource, 'plugin');
+		assert.strictEqual(disabledSkills.available[0].repositoryOverride, 'on');
+
+		const untrustedSkills = resolveEffectiveSkills([{
+			...skillDefinition,
+			plugin: { id: 'review-tools', enabled: true, trusted: false },
+		}], {}, {});
+		assert.match(untrustedSkills.needsAttention[0].issue ?? '', /untrusted executable content/);
+
+		const integration = resolveEffectiveMcpIntegrations([{
+			id: 'issues',
+			origin: 'plugin',
+			resource: URI.file('/plugins/review-tools/integrations/issues.json'),
+			definition: {
+				version: 1,
+				id: 'issues',
+				name: 'Issues',
+				description: 'Issue tools.',
+				transport: { type: 'http', url: 'https://example.com/mcp' },
+			},
+			plugin: { id: 'review-tools', enabled: false, trusted: true },
+		}], { issues: { activation: 'on' } }, {});
+		assert.strictEqual(integration.available[0].activation, 'off');
+		assert.strictEqual(integration.available[0].origins[0], 'plugin');
 	});
 });

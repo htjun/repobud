@@ -25,6 +25,7 @@ import { IPathService } from '../../../../services/path/common/pathService.js';
 import { CanonicalConfigurationService } from '../../browser/canonicalConfigurationService.js';
 import { ContextSkillService } from '../../browser/contextSkillService.js';
 import { createCanonicalConfiguration } from '../../common/canonicalConfiguration.js';
+import { IContextPluginService } from '../../common/pluginManagement.js';
 import { IRepositoryCatalogEntry, IRepositoryCatalogService } from '../../common/repositoryCatalog.js';
 
 class AtomicInMemoryFileSystemProvider extends InMemoryFileSystemProvider {
@@ -106,6 +107,17 @@ suite('ContextSkillService', () => {
 	let projectionService: TestSkillProjectionService;
 	let pathService: IPathService;
 	let skillService: ContextSkillService;
+	const pluginService = {
+		_serviceBrand: undefined,
+		snapshot: {
+			globalRepository: undefined,
+			installed: [],
+			updates: [],
+			errors: [],
+			loading: false,
+		},
+		onDidChange: Event.None,
+	} as unknown as IContextPluginService;
 
 	setup(async () => {
 		fileService = disposables.add(new FileService(new NullLogService()));
@@ -172,7 +184,8 @@ suite('ContextSkillService', () => {
 			canonicalConfigurationService,
 			projectionService,
 			storageService,
-			pathService
+			pathService,
+			pluginService
 		));
 		await skillService.refresh();
 
@@ -213,7 +226,8 @@ suite('ContextSkillService', () => {
 			canonicalConfigurationService,
 			projectionService,
 			storageService,
-			pathService
+			pathService,
+			pluginService
 		));
 		await skillService.refresh();
 
@@ -247,7 +261,8 @@ suite('ContextSkillService', () => {
 			canonicalConfigurationService,
 			projectionService,
 			storageService,
-			pathService
+			pathService,
+			pluginService
 		));
 		await skillService.refresh();
 
@@ -338,7 +353,8 @@ suite('ContextSkillService', () => {
 			canonicalConfigurationService,
 			projectionService,
 			storageService,
-			pathService
+			pathService,
+			pluginService
 		));
 		await skillService.refresh();
 

@@ -25,6 +25,7 @@ import { CanonicalConfigurationService } from '../../browser/canonicalConfigurat
 import { ContextMcpIntegrationService } from '../../browser/contextMcpIntegrationService.js';
 import { createCanonicalConfiguration } from '../../common/canonicalConfiguration.js';
 import { ICanonicalMcpDefinition, serializeCanonicalMcpDefinition } from '../../common/mcpIntegration.js';
+import { IContextPluginService } from '../../common/pluginManagement.js';
 import { IRepositoryCatalogEntry, IRepositoryCatalogService } from '../../common/repositoryCatalog.js';
 
 class AtomicInMemoryFileSystemProvider extends InMemoryFileSystemProvider {
@@ -75,6 +76,17 @@ suite('ContextMcpIntegrationService', () => {
 	let canonicalConfigurationService: CanonicalConfigurationService;
 	let healthService: TestMcpHealthService;
 	let integrationService: ContextMcpIntegrationService;
+	const pluginService = {
+		_serviceBrand: undefined,
+		snapshot: {
+			globalRepository: undefined,
+			installed: [],
+			updates: [],
+			errors: [],
+			loading: false,
+		},
+		onDidChange: Event.None,
+	} as unknown as IContextPluginService;
 
 	setup(async () => {
 		fileService = disposables.add(new FileService(new NullLogService()));
@@ -98,7 +110,8 @@ suite('ContextMcpIntegrationService', () => {
 			fileService,
 			catalogService,
 			canonicalConfigurationService,
-			healthService
+			healthService,
+			pluginService
 		));
 	});
 

@@ -393,6 +393,9 @@ export class SkillsViewPane extends ViewPane {
 		if (skill.activationSource === 'global') {
 			return localize('repositoryContextSkillEffectiveGlobal', '{0} by global default', activation);
 		}
+		if (skill.activationSource === 'plugin') {
+			return localize('repositoryContextSkillEffectivePlugin', '{0} because its Plugin is disabled', activation);
+		}
 		return localize('repositoryContextSkillEffectiveDefault', '{0} by default', activation);
 	}
 

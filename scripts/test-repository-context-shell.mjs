@@ -50,6 +50,44 @@ async function writeIntegrationFixture(root, definition) {
 	);
 }
 
+async function writePluginFixture(root, version, readme) {
+	await Promise.all([
+		writeSkillFixture(
+			join(root, 'skills'),
+			'plugin-review',
+			'Plugin Review',
+			'Review changes with Plugin guidance.'
+		),
+		writeIntegrationFixture(join(root, 'integrations'), {
+			id: 'plugin-issues',
+			name: 'Plugin Issues',
+			description: 'Issue tools owned by a Plugin.',
+			transport: {
+				type: 'http',
+				url: 'https://example.invalid/plugin-mcp',
+			},
+			connection: {
+				provider: 'github',
+			},
+		}),
+		mkdir(join(root, 'scripts'), { recursive: true }),
+		writeFile(join(root, 'README.md'), readme),
+	]);
+	await writeFile(join(root, 'scripts', 'check.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+	await chmod(join(root, 'scripts', 'check.sh'), 0o755);
+	await writeFile(join(root, 'repository-context-plugin.json'), `${JSON.stringify({
+		schemaVersion: 1,
+		id: 'review-tools',
+		name: 'Review Tools',
+		version,
+		license: 'MIT',
+		skills: ['skills/plugin-review'],
+		integrations: ['integrations/plugin-issues.json'],
+		scripts: ['scripts/check.sh'],
+		connections: [{ provider: 'github' }],
+	}, null, '\t')}\n`);
+}
+
 async function waitFor(predicate, message) {
 	const deadline = Date.now() + 10_000;
 	while (Date.now() < deadline) {
@@ -201,11 +239,13 @@ async function main() {
 	const sharedDataPath = join(temporaryRoot, 'shared');
 	const initializedConfigurationPath = join(temporaryRoot, 'configuration-new');
 	const existingConfigurationPath = join(temporaryRoot, 'configuration-existing');
+	const pluginSourcePath = join(temporaryRoot, 'plugin-source');
 	const applicationLog = [];
 	let browser;
 	let child;
 	let page;
 	let githubFixture;
+	const consoleErrors = [];
 
 	try {
 		await Promise.all([
@@ -215,6 +255,7 @@ async function main() {
 			mkdir(sharedDataPath),
 			mkdir(initializedConfigurationPath),
 			mkdir(existingConfigurationPath),
+			mkdir(pluginSourcePath),
 		]);
 		await mkdir(join(userDataPath, 'User'));
 		await Promise.all([
@@ -261,17 +302,29 @@ async function main() {
 						action: 'initialize',
 						uri: pathToFileURL(initializedConfigurationPath).toString(),
 					},
-				}, {
-					key: 'cmd+alt+e',
-					command: 'repositoryContext.manageConfigurationRepository',
-					args: {
-						action: 'select',
-						uri: pathToFileURL(existingConfigurationPath).toString(),
-					},
-				}])
-			),
+					}, {
+						key: 'cmd+alt+e',
+						command: 'repositoryContext.manageConfigurationRepository',
+						args: {
+							action: 'select',
+							uri: pathToFileURL(existingConfigurationPath).toString(),
+						},
+					}, {
+						key: 'cmd+alt+p',
+						command: 'repositoryContext.managePluginLibrary',
+					}, {
+						key: 'cmd+alt+u',
+						command: 'repositoryContext.checkPluginUpdates',
+					}])
+				),
 		]);
 		runGit(existingConfigurationPath, ['init', '-b', 'main']);
+		await writePluginFixture(pluginSourcePath, '1.0.0', 'Plugin version one.\n');
+		runGit(pluginSourcePath, ['init', '-b', 'main']);
+		runGit(pluginSourcePath, ['config', 'user.name', 'Repository Context Smoke']);
+		runGit(pluginSourcePath, ['config', 'user.email', 'smoke@example.invalid']);
+		runGit(pluginSourcePath, ['add', '.']);
+		runGit(pluginSourcePath, ['commit', '-m', 'Initial plugin']);
 		runGit(fixturePath, ['init', '-b', 'main']);
 		runGit(fixturePath, ['config', 'user.name', 'Repository Context Smoke']);
 		runGit(fixturePath, ['config', 'user.email', 'smoke@example.invalid']);
@@ -398,7 +451,6 @@ async function main() {
 			return Boolean(page);
 		}, 'Workbench page was not exposed through CDP.');
 
-		const consoleErrors = [];
 		page.on('console', message => {
 			if (message.type() === 'error') {
 				consoleErrors.push(message.text());
@@ -709,6 +761,145 @@ async function main() {
 			hasText: 'Disconnect GitHub account "alpha"?',
 		}).getByRole('button', { name: 'Disconnect' }).click();
 
+		const openPluginMenuAction = async name => {
+			await page.getByRole('button', { name: 'Views and More Actions...' }).click();
+			const menuItem = page.getByRole('menuitem', { name });
+			await menuItem.waitFor();
+			await page.keyboard.press('Escape');
+			await page.keyboard.press(name === 'Plugin Library...' ? 'Meta+Alt+P' : 'Meta+Alt+U');
+		};
+		await openPluginMenuAction('Plugin Library...');
+		await page.locator('.quick-input-widget')
+			.getByText('Install from Git Source...', { exact: true }).click();
+		await page.getByPlaceholder(
+			'Absolute local repository path, HTTPS URL, or SSH URL'
+		).fill(pluginSourcePath);
+		await page.keyboard.press('Enter');
+		const revisionInput = page.getByPlaceholder('Branch, tag, or full commit');
+		await revisionInput.fill('main');
+		await page.keyboard.press('Enter');
+		const installPluginDialog = page.getByRole('dialog').filter({
+			hasText: 'Install Plugin "Review Tools"?',
+		});
+		await installPluginDialog.waitFor();
+		assert.match(await installPluginDialog.innerText(), /Skills: skills\/plugin-review/);
+		assert.match(await installPluginDialog.innerText(), /MCP Integrations: integrations\/plugin-issues\.json/);
+		assert.match(await installPluginDialog.innerText(), /Executable scripts: scripts\/check\.sh/);
+		assert.match(await installPluginDialog.innerText(), /Connection requirements: github/);
+		assert.match(await installPluginDialog.innerText(), /Content hash: [a-f0-9]{64}/);
+		await installPluginDialog.getByRole('checkbox').check();
+		await installPluginDialog.getByRole('button', { name: 'Install' }).click();
+
+		const installedPluginPath = join(existingConfigurationPath, 'plugins', 'review-tools');
+		await waitFor(
+			() => existsSync(join(installedPluginPath, '.repository-context-install.json')),
+			'Plugin package was not installed into the configuration repository.'
+		);
+		const installedPluginRecord = await readFile(
+			join(installedPluginPath, '.repository-context-install.json'),
+			'utf8'
+		);
+		assert.doesNotMatch(
+			installedPluginRecord,
+			new RegExp(temporaryRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+		);
+
+		await page.getByRole('tab', { name: 'Skills' }).click();
+		const pluginSkill = page.locator(
+			'.repository-context-skill-row[data-skill-id="plugin-review"]'
+		);
+		await pluginSkill.waitFor();
+		assert.match(await pluginSkill.innerText(), /Plugin/);
+		assert.match(await pluginSkill.innerText(), /Enabled by default/);
+
+		await openPluginMenuAction('Plugin Library...');
+		await page.locator('.quick-input-widget').getByText('Review Tools', { exact: true }).click();
+		await page.locator('.quick-input-widget').getByText('Disable Plugin', { exact: true }).click();
+		await pluginSkill.getByText(
+			'Disabled because its Plugin is disabled',
+			{ exact: true }
+		).waitFor();
+		assert.equal(existsSync(join(installedPluginPath, 'skills', 'plugin-review', 'SKILL.md')), true);
+
+		await openPluginMenuAction('Plugin Library...');
+		await page.locator('.quick-input-widget').getByText('Review Tools', { exact: true }).click();
+		await page.locator('.quick-input-widget').getByText('Enable Plugin', { exact: true }).click();
+		await pluginSkill.getByText('Enabled by default', { exact: true }).waitFor();
+		await pluginSkill.getByRole('button', { name: 'Off' }).click();
+		await waitFor(async () => {
+			const configuration = JSON.parse(await readFile(
+				join(fixturePath, '.repository-context', 'config.json'),
+				'utf8'
+			));
+			return configuration.skills['plugin-review']?.activation === 'off';
+		}, 'Plugin-owned Skill was not deactivated independently.');
+		assert.equal(
+			JSON.parse(installedPluginRecord).enabled,
+			true,
+			'Capability deactivation unexpectedly changed Plugin installation state.'
+		);
+		await pluginSkill.getByRole('button', { name: 'Inherit' }).click();
+
+		await page.getByRole('tab', { name: 'Integrations' }).click();
+		const pluginIntegration = page.locator(
+			'.repository-context-integration-row[data-integration-id="plugin-issues"]'
+		);
+		await pluginIntegration.waitFor();
+		assert.match(await pluginIntegration.innerText(), /Plugin/);
+		assert.match(await pluginIntegration.innerText(), /Connect a GitHub account/);
+
+		await writePluginFixture(pluginSourcePath, '2.0.0', 'Plugin version two.\n');
+		runGit(pluginSourcePath, ['add', '.']);
+		runGit(pluginSourcePath, ['commit', '-m', 'Update plugin']);
+		await openPluginMenuAction('Plugin Updates...');
+		await page.getByRole('option', { name: /Review Tools/ }).click();
+		const forkUpdateDialog = page.getByRole('dialog').filter({
+			hasText: 'Review update for "Review Tools"',
+		});
+		await forkUpdateDialog.waitFor();
+		assert.match(await forkUpdateDialog.innerText(), /1\.0\.0/);
+		assert.match(await forkUpdateDialog.innerText(), /2\.0\.0/);
+		await forkUpdateDialog.getByRole('button', { name: 'Fork local version' }).click();
+		await waitFor(async () => {
+			const pluginDirectories = await readdir(join(existingConfigurationPath, 'plugins'));
+			return pluginDirectories.some(name => /^review-tools-fork-[a-f0-9]{8}$/.test(name));
+		}, 'Plugin fork was not created.');
+		assert.equal(
+			JSON.parse(await readFile(
+				join(installedPluginPath, 'repository-context-plugin.json'),
+				'utf8'
+			)).version,
+			'1.0.0',
+			'Fork unexpectedly changed the original Plugin.'
+		);
+
+		await openPluginMenuAction('Plugin Updates...');
+		await page.getByRole('option', { name: /Review Tools/ }).click();
+		const applyUpdateDialog = page.getByRole('dialog').filter({
+			hasText: 'Review update for "Review Tools"',
+		});
+		await applyUpdateDialog.waitFor();
+		await applyUpdateDialog.getByRole('checkbox').check();
+		await applyUpdateDialog.getByRole('button', { name: 'Apply' }).click();
+		await waitFor(async () => JSON.parse(await readFile(
+			join(installedPluginPath, 'repository-context-plugin.json'),
+			'utf8'
+		)).version === '2.0.0', 'Plugin update was not applied explicitly.');
+
+		await openPluginMenuAction('Plugin Library...');
+		await page.locator('.quick-input-widget').getByText('Review Tools', { exact: true }).click();
+		await page.locator('.quick-input-widget').getByText('Uninstall Plugin...', { exact: true }).click();
+		const uninstallPluginDialog = page.getByRole('dialog').filter({
+			hasText: 'Uninstall Plugin "Review Tools"?',
+		});
+		await uninstallPluginDialog.waitFor();
+		assert.match(await uninstallPluginDialog.innerText(), /Connections and their Keychain credentials will not be deleted/);
+		await uninstallPluginDialog.getByRole('button', { name: 'Uninstall' }).click();
+		await waitFor(
+			() => !existsSync(installedPluginPath),
+			'Plugin package was not uninstalled.'
+		);
+
 		await localIntegration.getByRole('button', { name: 'Project' }).click();
 		await waitFor(
 			() => existsSync(join(fixturePath, '.mcp.json')),
@@ -1018,6 +1209,9 @@ async function main() {
 		if (applicationLog.length > 0) {
 			console.error(applicationLog.join(''));
 		}
+		if (consoleErrors.length > 0) {
+			console.error(consoleErrors.join('\n'));
+		}
 		throw error;
 	} finally {
 		await browser?.close().catch(() => undefined);
@@ -1027,7 +1221,11 @@ async function main() {
 		if (child) {
 			await stopApplication(child);
 		}
-		await rm(temporaryRoot, { recursive: true, force: true });
+		if (process.env.REPOSITORY_CONTEXT_SMOKE_KEEP_ARTIFACTS === '1') {
+			console.error(`Repository Context smoke artifacts retained at ${temporaryRoot}`);
+		} else {
+			await rm(temporaryRoot, { recursive: true, force: true });
+		}
 	}
 }
 

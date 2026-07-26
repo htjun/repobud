@@ -11,6 +11,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IRepositoryContextMcpHealthService } from '../../../../platform/repositoryContext/common/mcpHealth.js';
+import { IInstalledPluginPackage } from '../../../../platform/repositoryContext/common/pluginPackage.js';
 import {
 	createCanonicalConfiguration,
 	GLOBAL_CONFIGURATION_FILE,
@@ -34,6 +35,7 @@ import {
 	resolveEffectiveMcpIntegrations,
 } from '../common/mcpIntegration.js';
 import { IRepositoryCatalogService } from '../common/repositoryCatalog.js';
+import { IContextPluginService } from '../common/pluginManagement.js';
 import { SkillProjectionClient } from '../../../../platform/repositoryContext/common/skillProjection.js';
 
 const emptySections = resolveEffectiveMcpIntegrations([], {}, {});
@@ -54,6 +56,7 @@ export class ContextMcpIntegrationService extends Disposable implements IMcpInte
 		@IRepositoryCatalogService private readonly repositoryCatalogService: IRepositoryCatalogService,
 		@ICanonicalConfigurationService private readonly canonicalConfigurationService: ICanonicalConfigurationService,
 		@IRepositoryContextMcpHealthService private readonly healthService: IRepositoryContextMcpHealthService,
+		@IContextPluginService private readonly pluginService: IContextPluginService,
 	) {
 		super();
 		this._snapshot = {
@@ -66,6 +69,7 @@ export class ContextMcpIntegrationService extends Disposable implements IMcpInte
 
 		this._register(repositoryCatalogService.onDidChange(() => void this.refresh()));
 		this._register(canonicalConfigurationService.onDidChangeGlobalRepository(() => void this.refresh()));
+		this._register(pluginService.onDidChange(() => void this.refresh()));
 		this._register(fileService.onDidFilesChange(event => {
 			const globalRepository = this.canonicalConfigurationService.globalRepository;
 			const activeRepository = this.repositoryCatalogService.activeRepository;
@@ -100,7 +104,7 @@ export class ContextMcpIntegrationService extends Disposable implements IMcpInte
 		this.updateSnapshot({ ...this._snapshot, activeRepository, globalRepository, loading: true });
 
 		const errors: string[] = [];
-		const [globalConfiguration, repositoryConfiguration, globalDefinitions, repositoryDefinitions] =
+		const [globalConfiguration, repositoryConfiguration, globalDefinitions, repositoryDefinitions, pluginDefinitions] =
 			await Promise.all([
 				this.readGlobalConfiguration(errors),
 				this.readRepositoryConfiguration(activeRepository, errors),
@@ -116,12 +120,13 @@ export class ContextMcpIntegrationService extends Disposable implements IMcpInte
 					),
 					'repository'
 				),
+				this.discoverPluginDefinitions(),
 			]);
 		if (request !== this.refreshRequest) {
 			return;
 		}
 		const resolvedSections = resolveEffectiveMcpIntegrations(
-			[...globalDefinitions, ...repositoryDefinitions],
+			[...globalDefinitions, ...repositoryDefinitions, ...pluginDefinitions],
 			globalConfiguration.integrations,
 			repositoryConfiguration.integrations,
 			Object.fromEntries(this.health)
@@ -307,14 +312,21 @@ export class ContextMcpIntegrationService extends Disposable implements IMcpInte
 	private async readDefinition(
 		resource: URI,
 		origin: ICanonicalMcpDefinitionResource['origin'],
+		plugin?: IInstalledPluginPackage,
 	): Promise<ICanonicalMcpDefinitionResource> {
 		const id = basename(resource).replace(/\.json$/, '');
+		const pluginState = plugin ? {
+			id: plugin.manifest.id,
+			enabled: plugin.enabled,
+			trusted: plugin.trusted,
+		} : undefined;
 		try {
 			const content = await this.fileService.readFile(resource);
 			return {
 				id,
 				origin,
 				resource,
+				plugin: pluginState,
 				definition: parseCanonicalMcpDefinition(content.value.toString(), id),
 			};
 		} catch (error) {
@@ -322,9 +334,19 @@ export class ContextMcpIntegrationService extends Disposable implements IMcpInte
 				id,
 				origin,
 				resource,
+				plugin: pluginState,
 				issue: this.toErrorMessage(`Cannot read MCP definition "${id}"`, error),
 			};
 		}
+	}
+
+	private async discoverPluginDefinitions(): Promise<ICanonicalMcpDefinitionResource[]> {
+		const definitions = await Promise.all(this.pluginService.snapshot.installed.flatMap(plugin =>
+			plugin.manifest.integrations.map(integration =>
+				this.readDefinition(joinPath(plugin.resource, integration), 'plugin', plugin)
+			)
+		));
+		return definitions.sort((left, right) => left.id.localeCompare(right.id));
 	}
 
 	private getIntegration(id: string): IEffectiveMcpIntegration {
