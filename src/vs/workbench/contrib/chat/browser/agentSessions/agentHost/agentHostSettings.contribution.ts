@@ -11,6 +11,7 @@ import { ContextKeyExpr } from '../../../../../../platform/contextkey/common/con
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
+import product from '../../../../../../platform/product/common/product.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../../common/contributions.js';
 import { IEditorService } from '../../../../../services/editor/common/editorService.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
@@ -48,7 +49,9 @@ class AgentHostSettingsContribution extends Disposable implements IWorkbenchCont
 	}
 }
 
-registerWorkbenchContribution2(AgentHostSettingsContribution.ID, AgentHostSettingsContribution, WorkbenchPhase.AfterRestored);
+if (!product.repositoryContextWorkbench?.disableAgentHost) {
+	registerWorkbenchContribution2(AgentHostSettingsContribution.ID, AgentHostSettingsContribution, WorkbenchPhase.AfterRestored);
+}
 
 /** Matches local agent-host session types (e.g. `agent-host-copilotcli`), excluding `remote-*` targets which this ambient-only command does not support. */
 const LOCAL_AGENT_HOST_SESSION_TYPE_RE = /^agent-host-/;

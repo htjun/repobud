@@ -12,9 +12,11 @@
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IAgentHostService } from '../../../../platform/agentHost/common/agentService.js';
+import { NullAgentHostService } from '../../../../platform/agentHost/browser/nullAgentHostService.js';
 import { LocalAgentHostServiceClient } from '../../../../platform/agentHost/electron-browser/localAgentHostService.js';
 import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
 import { EditorRemoteAgentHostServiceClient } from '../browser/editorRemoteAgentHostServiceClient.js';
+import product from '../../../../platform/product/common/product.js';
 
 /**
  * DI shim: picks between the local utility-process agent host and the
@@ -39,6 +41,8 @@ class WorkbenchAgentHostService {
 
 registerSingleton(
 	IAgentHostService,
-	WorkbenchAgentHostService as unknown as { new(...args: unknown[]): IAgentHostService },
+	(product.repositoryContextWorkbench?.disableAgentHost
+		? NullAgentHostService
+		: WorkbenchAgentHostService) as unknown as { new(...args: unknown[]): IAgentHostService },
 	InstantiationType.Delayed,
 );

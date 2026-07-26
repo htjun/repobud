@@ -70,36 +70,12 @@ function darwinBundleDocumentType(extensions: string[], icon: string, nameOrSuff
 
 	return {
 		name: nameOrSuffix,
-		role: 'Editor',
+		role: 'Viewer',
 		ostypes: ['TEXT', 'utxt', 'TUTX', '****'],
 		extensions,
 		iconFile: 'resources/darwin/' + icon.toLowerCase() + '.icns',
 		utis
 	};
-}
-
-/**
- * Generate several `DarwinDocumentType`s with unique names and a shared icon.
- * @param types A map of file type names to their associated file extensions.
- * @param icon A darwin icon resource to use. For example, `'HTML'` would refer to `resources/darwin/html.icns`
- *
- * Examples:
- * ```
- * darwinBundleDocumentTypes({ 'C header file': 'h', 'C source code': 'c' },'c')
- * darwinBundleDocumentTypes({ 'React source code': ['jsx', 'tsx'] }, 'react')
- * ```
- */
-function darwinBundleDocumentTypes(types: { [name: string]: string | string[] }, icon: string): DarwinDocumentType[] {
-	return Object.keys(types).map((name: string): DarwinDocumentType => {
-		const extensions = types[name];
-		return {
-			name,
-			role: 'Editor',
-			ostypes: ['TEXT', 'utxt', 'TUTX', '****'],
-			extensions: Array.isArray(extensions) ? extensions : [extensions],
-			iconFile: 'resources/darwin/' + icon + '.icns'
-		};
-	});
 }
 
 const { electronVersion, msBuildId } = util.getElectronVersion();
@@ -142,90 +118,15 @@ const electronAssetResolver = electronFeed
 export const config = {
 	version: electronVersion,
 	productAppName: product.nameLong,
-	companyName: 'Microsoft Corporation',
-	copyright: 'Copyright (C) 2026 Microsoft. All rights reserved',
+	companyName: product.companyName,
+	copyright: product.copyright,
 	darwinExecutable: product.nameShort,
-	darwinIcon: 'resources/darwin/code.icns',
+	darwinIcon: product.darwinIcon,
 	darwinBundleIdentifier: product.darwinBundleIdentifier,
 	darwinApplicationCategoryType: 'public.app-category.developer-tools',
-	darwinHelpBookFolder: 'VS Code HelpBook',
-	darwinHelpBookName: 'VS Code HelpBook',
+	darwinHelpBookFolder: `${product.nameLong} HelpBook`,
+	darwinHelpBookName: `${product.nameLong} HelpBook`,
 	darwinBundleDocumentTypes: [
-		...darwinBundleDocumentTypes({ 'C header file': 'h', 'C source code': 'c' }, 'c'),
-		...darwinBundleDocumentTypes({ 'Git configuration file': ['gitattributes', 'gitconfig', 'gitignore'] }, 'config'),
-		...darwinBundleDocumentTypes({ 'HTML template document': ['asp', 'aspx', 'cshtml', 'jshtm', 'jsp', 'phtml', 'shtml'] }, 'html'),
-		darwinBundleDocumentType(['bat', 'cmd'], 'bat', 'Windows command script'),
-		darwinBundleDocumentType(['bowerrc'], 'Bower'),
-		darwinBundleDocumentType(['config', 'editorconfig', 'ini', 'cfg'], 'config', 'Configuration file'),
-		darwinBundleDocumentType(['hh', 'hpp', 'hxx', 'h++'], 'cpp', 'C++ header file'),
-		darwinBundleDocumentType(['cc', 'cpp', 'cxx', 'c++'], 'cpp', 'C++ source code'),
-		darwinBundleDocumentType(['m'], 'default', 'Objective-C source code'),
-		darwinBundleDocumentType(['mm'], 'cpp', 'Objective-C++ source code'),
-		darwinBundleDocumentType(['cs', 'csx'], 'csharp', 'C# source code'),
-		darwinBundleDocumentType(['css'], 'css', 'CSS'),
-		darwinBundleDocumentType(['go'], 'go', 'Go source code'),
-		darwinBundleDocumentType(['htm', 'html', 'xhtml'], 'HTML'),
-		darwinBundleDocumentType(['jade'], 'Jade'),
-		darwinBundleDocumentType(['jav', 'java'], 'Java'),
-		darwinBundleDocumentType(['js', 'jscsrc', 'jshintrc', 'mjs', 'cjs'], 'Javascript', 'file'),
-		darwinBundleDocumentType(['json'], 'JSON'),
-		darwinBundleDocumentType(['less'], 'Less'),
-		darwinBundleDocumentType(['markdown', 'md', 'mdoc', 'mdown', 'mdtext', 'mdtxt', 'mdwn', 'mkd', 'mkdn'], 'Markdown'),
-		darwinBundleDocumentType(['php'], 'PHP', 'source code'),
-		darwinBundleDocumentType(['ps1', 'psd1', 'psm1'], 'Powershell', 'script'),
-		darwinBundleDocumentType(['py', 'pyi'], 'Python', 'script'),
-		darwinBundleDocumentType(['gemspec', 'rb', 'erb'], 'Ruby', 'source code'),
-		darwinBundleDocumentType(['scss', 'sass'], 'SASS', 'file'),
-		darwinBundleDocumentType(['sql'], 'SQL', 'script'),
-		darwinBundleDocumentType(['ts'], 'TypeScript', 'file'),
-		darwinBundleDocumentType(['tsx', 'jsx'], 'React', 'source code'),
-		darwinBundleDocumentType(['vue'], 'Vue', 'source code'),
-		darwinBundleDocumentType(['ascx', 'csproj', 'dtd', 'plist', 'wxi', 'wxl', 'wxs', 'xml', 'xaml'], 'XML'),
-		darwinBundleDocumentType(['eyaml', 'eyml', 'yaml', 'yml'], 'YAML'),
-		darwinBundleDocumentType([
-			'bash', 'bash_login', 'bash_logout', 'bash_profile', 'bashrc',
-			'profile', 'rhistory', 'rprofile', 'sh', 'zlogin', 'zlogout',
-			'zprofile', 'zsh', 'zshenv', 'zshrc'
-		], 'Shell', 'script'),
-		// Default icon with specified names
-		...darwinBundleDocumentTypes({
-			'Clojure source code': ['clj', 'cljs', 'cljx', 'clojure'],
-			'VS Code workspace file': 'code-workspace',
-			'CoffeeScript source code': 'coffee',
-			'Comma Separated Values': 'csv',
-			'CMake script': 'cmake',
-			'Dart script': 'dart',
-			'Diff file': 'diff',
-			'Dockerfile': 'dockerfile',
-			'Gradle file': 'gradle',
-			'Groovy script': 'groovy',
-			'Makefile': ['makefile', 'mk'],
-			'Lua script': 'lua',
-			'Pug document': 'pug',
-			'Jupyter': 'ipynb',
-			'Lockfile': 'lock',
-			'Log file': 'log',
-			'Plain Text File': 'txt',
-			'Xcode project file': 'xcodeproj',
-			'Xcode workspace file': 'xcworkspace',
-			'Visual Basic script': 'vb',
-			'R source code': 'r',
-			'Rust source code': 'rs',
-			'Restructured Text document': 'rst',
-			'LaTeX document': ['tex', 'cls'],
-			'F# source code': 'fs',
-			'F# signature file': 'fsi',
-			'F# script': ['fsx', 'fsscript'],
-			'SVG document': ['svg'],
-			'TOML document': 'toml',
-			'Swift source code': 'swift',
-		}, 'default'),
-		// Default icon with default name
-		darwinBundleDocumentType([
-			'containerfile', 'ctp', 'dot', 'edn', 'handlebars', 'hbs', 'ml', 'mli',
-			'pl', 'pl6', 'pm', 'pm6', 'pod', 'pp', 'properties', 'psgi', 'rt', 't'
-		], 'default', product.nameLong + ' document'),
-		// Folder support ()
 		darwinBundleDocumentType([], 'default', 'Folder', ['public.folder'])
 	],
 	darwinBundleURLTypes: [{
@@ -236,7 +137,7 @@ export const config = {
 	darwinForceDarkModeSupport: true,
 	darwinCredits: darwinCreditsTemplate ? Buffer.from(darwinCreditsTemplate({ commit: commit, date: new Date().toISOString() })) : undefined,
 	linuxExecutableName: product.applicationName,
-	winIcon: 'resources/win32/code.ico',
+	winIcon: product.winIcon,
 	token: process.env['GITHUB_TOKEN'],
 	repo: electronAssetResolver,
 	validateChecksum: true,

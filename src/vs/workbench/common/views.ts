@@ -200,6 +200,19 @@ export interface IViewContainersRegistry {
 	 * Return the default view containers from the given location
 	 */
 	getDefaultViewContainers(location: ViewContainerLocation): ViewContainer[];
+
+	/**
+	 * Sets the policy used by the workbench to decide whether a registered view
+	 * container is user-reachable. Containers remain registered so extensions can
+	 * safely contribute views to them.
+	 */
+	setViewContainerUserReachabilityProvider(provider: (viewContainer: ViewContainer, location: ViewContainerLocation) => boolean): void;
+
+	/**
+	 * Returns whether the given view container should have user-facing panes and
+	 * open actions registered.
+	 */
+	isViewContainerUserReachable(viewContainer: ViewContainer, location: ViewContainerLocation): boolean;
 }
 
 interface ViewOrderDelegate {
@@ -223,6 +236,7 @@ class ViewContainersRegistryImpl extends Disposable implements IViewContainersRe
 
 	private readonly viewContainers: Map<ViewContainerLocation, ViewContainer[]> = new Map<ViewContainerLocation, ViewContainer[]>();
 	private readonly defaultViewContainers: ViewContainer[] = [];
+	private viewContainerUserReachabilityProvider: (viewContainer: ViewContainer, location: ViewContainerLocation) => boolean = () => true;
 
 	get all(): ViewContainer[] {
 		return [...this.viewContainers.values()].flat();
@@ -274,6 +288,14 @@ class ViewContainersRegistryImpl extends Disposable implements IViewContainersRe
 
 	getDefaultViewContainers(location: ViewContainerLocation): ViewContainer[] {
 		return this.defaultViewContainers.filter(viewContainer => this.getViewContainerLocation(viewContainer) === location);
+	}
+
+	setViewContainerUserReachabilityProvider(provider: (viewContainer: ViewContainer, location: ViewContainerLocation) => boolean): void {
+		this.viewContainerUserReachabilityProvider = provider;
+	}
+
+	isViewContainerUserReachable(viewContainer: ViewContainer, location: ViewContainerLocation): boolean {
+		return this.viewContainerUserReachabilityProvider(viewContainer, location);
 	}
 }
 

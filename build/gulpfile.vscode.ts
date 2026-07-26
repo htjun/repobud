@@ -280,12 +280,13 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 			.pipe(rename(function (path) { path.dirname = path.dirname!.replace(new RegExp('^' + out), 'out'); }))
 			.pipe(util.setExecutableBit(['**/*.sh']));
 
-		const platformSpecificBuiltInExtensionsExclusions = product.builtInExtensions.filter(ext => {
-			if (!(ext as { platforms?: string[] }).platforms) {
+		const productBuiltInExtensions = product.builtInExtensions as Array<{ name: string; platforms?: string[] }>;
+		const platformSpecificBuiltInExtensionsExclusions = productBuiltInExtensions.filter(ext => {
+			if (!ext.platforms) {
 				return false;
 			}
 
-			const set = new Set((ext as { platforms?: string[] }).platforms);
+			const set = new Set(ext.platforms);
 			return !set.has(platform);
 		}).map(ext => `!.build/extensions/${ext.name}/**`);
 
@@ -662,6 +663,10 @@ function prepareCopilotRipgrepShimTask(platform: string, arch: string, destinati
 	const outputDir = path.join(path.dirname(root), destinationFolderName);
 
 	return async () => {
+		if (product.excludedSystemExtensions.some(id => id.toLowerCase() === 'github.copilot-chat')) {
+			return;
+		}
+
 		// On Windows with win32VersionedUpdate, app resources live under a
 		// commit-hash prefix: {output}/{commitHash}/resources/app/
 		const versionedResourcesFolder = util.getVersionedResourcesFolder(platform, commit!);

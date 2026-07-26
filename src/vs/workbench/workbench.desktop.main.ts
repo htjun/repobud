@@ -13,6 +13,7 @@
 //#region --- workbench common
 
 import './workbench.common.main.js';
+import './contrib/repositoryContext/browser/repositoryContext.contribution.js';
 
 //#endregion
 

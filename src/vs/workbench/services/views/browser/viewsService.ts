@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, IDisposable, toDisposable, DisposableStore, DisposableMap } from '../../../../base/common/lifecycle.js';
-import { IViewDescriptorService, ViewContainer, IViewDescriptor, IView, ViewContainerLocation, IViewPaneContainer } from '../../../common/views.js';
+import { Extensions as ViewExtensions, IViewContainersRegistry, IViewDescriptorService, ViewContainer, IViewDescriptor, IView, ViewContainerLocation, IViewPaneContainer } from '../../../common/views.js';
 import { FocusedViewContext, getVisbileViewContextKey } from '../../../common/contextkeys.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
@@ -123,6 +123,10 @@ export class ViewsService extends Disposable implements IViewsService {
 	}
 
 	private onDidRegisterViewContainer(viewContainer: ViewContainer, viewContainerLocation: ViewContainerLocation): void {
+		if (!this.isViewContainerUserReachable(viewContainer, viewContainerLocation)) {
+			return;
+		}
+
 		this.registerPaneComposite(viewContainer, viewContainerLocation);
 		const disposables = new DisposableStore();
 
@@ -140,16 +144,26 @@ export class ViewsService extends Disposable implements IViewsService {
 	}
 
 	private onDidDeregisterViewContainer(viewContainer: ViewContainer, viewContainerLocation: ViewContainerLocation): void {
-		this.deregisterPaneComposite(viewContainer, viewContainerLocation);
+		if (this.isViewContainerUserReachable(viewContainer, viewContainerLocation)) {
+			this.deregisterPaneComposite(viewContainer, viewContainerLocation);
+		}
 		this.viewContainerDisposables.deleteAndDispose(viewContainer.id);
 	}
 
 	private onDidChangeContainerLocation(viewContainer: ViewContainer, from: ViewContainerLocation, to: ViewContainerLocation): void {
-		this.deregisterPaneComposite(viewContainer, from);
-		this.registerPaneComposite(viewContainer, to);
+		const wasUserReachable = this.isViewContainerUserReachable(viewContainer, from);
+		const isUserReachable = this.isViewContainerUserReachable(viewContainer, to);
+
+		if (wasUserReachable) {
+			this.deregisterPaneComposite(viewContainer, from);
+		}
+		if (isUserReachable) {
+			this.registerPaneComposite(viewContainer, to);
+		}
 
 		// Open view container if part is visible and there is only one view container in location
 		if (
+			isUserReachable &&
 			this.layoutService.isVisible(this.paneCompositeService.getPartId(to)) &&
 			this.viewDescriptorService.getViewContainersByLocation(to).filter(vc => this.isViewContainerActive(vc.id)).length === 1
 		) {
@@ -242,7 +256,7 @@ export class ViewsService extends Disposable implements IViewsService {
 		const viewContainer = this.viewDescriptorService.getViewContainerById(id);
 		if (viewContainer) {
 			const viewContainerLocation = this.viewDescriptorService.getViewContainerLocation(viewContainer);
-			if (viewContainerLocation !== null) {
+			if (viewContainerLocation !== null && this.isViewContainerUserReachable(viewContainer, viewContainerLocation)) {
 				const paneComposite = await this.paneCompositeService.openPaneComposite(id, viewContainerLocation, focus);
 				return paneComposite || null;
 			}
@@ -305,11 +319,15 @@ export class ViewsService extends Disposable implements IViewsService {
 			return null;
 		}
 
+		const location = this.viewDescriptorService.getViewContainerLocation(viewContainer);
+		if (location === null || !this.isViewContainerUserReachable(viewContainer, location)) {
+			return null;
+		}
+
 		if (!this.viewDescriptorService.getViewContainerModel(viewContainer).activeViewDescriptors.some(viewDescriptor => viewDescriptor.id === id)) {
 			return null;
 		}
 
-		const location = this.viewDescriptorService.getViewContainerLocation(viewContainer);
 		const compositeDescriptor = this.getComposite(viewContainer.id, location!);
 		if (compositeDescriptor) {
 			const paneComposite = await this.openComposite(compositeDescriptor.id, location!) as IPaneComposite | undefined;
@@ -679,6 +697,10 @@ export class ViewsService extends Disposable implements IViewsService {
 			viewContainer.requestedIndex,
 			viewContainer.icon instanceof URI ? viewContainer.icon : undefined
 		));
+	}
+
+	private isViewContainerUserReachable(viewContainer: ViewContainer, location: ViewContainerLocation): boolean {
+		return Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).isViewContainerUserReachable(viewContainer, location);
 	}
 
 	private deregisterPaneComposite(viewContainer: ViewContainer, viewContainerLocation: ViewContainerLocation): void {

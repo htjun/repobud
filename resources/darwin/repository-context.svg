@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+	<defs>
+		<linearGradient id="background" x1="144" y1="112" x2="880" y2="912" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#22314D"/>
+			<stop offset="1" stop-color="#101827"/>
+		</linearGradient>
+		<linearGradient id="accent" x1="316" y1="292" x2="734" y2="750" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#69D2C5"/>
+			<stop offset="1" stop-color="#4A8EF0"/>
+		</linearGradient>
+	</defs>
+	<rect x="72" y="72" width="880" height="880" rx="224" fill="url(#background)"/>
+	<path d="M332 322v330c0 55 45 100 100 100h96" fill="none" stroke="url(#accent)" stroke-width="58" stroke-linecap="round"/>
+	<path d="M332 488h244c64 0 116-52 116-116v-50" fill="none" stroke="url(#accent)" stroke-width="58" stroke-linecap="round"/>
+	<circle cx="332" cy="274" r="78" fill="#F4F7FB"/>
+	<circle cx="332" cy="274" r="34" fill="#22314D"/>
+	<circle cx="692" cy="274" r="78" fill="#F4F7FB"/>
+	<circle cx="692" cy="274" r="34" fill="#22314D"/>
+	<circle cx="576" cy="752" r="78" fill="#F4F7FB"/>
+	<circle cx="576" cy="752" r="34" fill="#22314D"/>
+</svg>

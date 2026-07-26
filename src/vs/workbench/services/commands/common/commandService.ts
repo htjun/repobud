@@ -10,6 +10,7 @@ import { CommandsRegistry, ICommandEvent, ICommandService } from '../../../../pl
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import product from '../../../../platform/product/common/product.js';
 import { IExtensionService } from '../../extensions/common/extensions.js';
 
 export class CommandService extends Disposable implements ICommandService {
@@ -51,6 +52,13 @@ export class CommandService extends Disposable implements ICommandService {
 
 	async executeCommand<T>(id: string, ...args: unknown[]): Promise<T> {
 		this._logService.trace('CommandService#executeCommand', id);
+
+		const commandPolicy = product.repositoryContextWorkbench;
+		if (commandPolicy?.blockedCommandIds?.includes(id) ||
+			commandPolicy?.blockedCommandPrefixes?.some(prefix => id.startsWith(prefix))) {
+			this._logService.trace('CommandService#executeCommand blocked by product composition', id);
+			return undefined as T;
+		}
 
 		const activationEvent = `onCommand:${id}`;
 		const commandIsRegistered = !!CommandsRegistry.getCommand(id);

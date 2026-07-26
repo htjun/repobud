@@ -18,7 +18,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../platform/
 import { IExtensionService } from '../../services/extensions/common/extensions.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
 import { ToggleCompositePinnedAction, ICompositeBarColors, IActivityHoverOptions, ToggleCompositeBadgeAction, CompositeBarAction, ICompositeBar, ICompositeBarActionItem } from './compositeBarActions.js';
-import { IViewDescriptorService, ViewContainer, IViewContainerModel, ViewContainerLocation } from '../../common/views.js';
+import { Extensions as ViewExtensions, IViewContainersRegistry, IViewDescriptorService, ViewContainer, IViewContainerModel, ViewContainerLocation } from '../../common/views.js';
 import { IContextKeyService, ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
 import { isString } from '../../../base/common/types.js';
 import { IWorkbenchEnvironmentService } from '../../services/environment/common/environmentService.js';
@@ -31,6 +31,7 @@ import { GestureEvent } from '../../../base/browser/touch.js';
 import { IPaneCompositePart } from './paneCompositePart.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 import { IViewsService } from '../../services/views/common/viewsService.js';
+import { Registry } from '../../../platform/registry/common/platform.js';
 
 interface IPlaceholderViewContainer {
 	readonly id: string;
@@ -118,6 +119,10 @@ export class PaneCompositeBar extends Disposable {
 		);
 
 		const cachedItems = this.cachedViewContainers
+			.filter(container => {
+				const registeredViewContainer = this.viewDescriptorService.getViewContainerById(container.id);
+				return !registeredViewContainer || this.isViewContainerUserReachable(registeredViewContainer);
+			})
 			.map(container => ({
 				id: container.id,
 				name: container.name,
@@ -164,12 +169,14 @@ export class PaneCompositeBar extends Disposable {
 		// Move View Container
 		const moveActions = [];
 		for (const location of [ViewContainerLocation.Sidebar, ViewContainerLocation.AuxiliaryBar, ViewContainerLocation.Panel]) {
-			if (currentLocation !== location) {
+			if (currentLocation !== location && this.isViewContainerUserReachable(viewContainer, location)) {
 				moveActions.push(this.createMoveAction(viewContainer, location, defaultLocation));
 			}
 		}
 
-		actions.push(new SubmenuAction('moveToMenu', localize('moveToMenu', "Move To"), moveActions));
+		if (moveActions.length > 0) {
+			actions.push(new SubmenuAction('moveToMenu', localize('moveToMenu', "Move To"), moveActions));
+		}
 
 		// Reset Location
 		if (defaultLocation !== currentLocation) {
@@ -241,7 +248,9 @@ export class PaneCompositeBar extends Disposable {
 
 	private onDidChangeViewContainers(added: readonly { container: ViewContainer; location: ViewContainerLocation }[], removed: readonly { container: ViewContainer; location: ViewContainerLocation }[]) {
 		removed.filter(({ location }) => location === this.location).forEach(({ container }) => this.onDidDeregisterViewContainer(container));
-		this.onDidRegisterViewContainers(added.filter(({ location }) => location === this.location).map(({ container }) => container));
+		this.onDidRegisterViewContainers(added
+			.filter(({ container, location }) => location === this.location && this.isViewContainerUserReachable(container, location))
+			.map(({ container }) => container));
 	}
 
 	private onDidChangeViewContainerLocation(container: ViewContainer, from: ViewContainerLocation, to: ViewContainerLocation) {
@@ -249,7 +258,7 @@ export class PaneCompositeBar extends Disposable {
 			this.onDidDeregisterViewContainer(container);
 		}
 
-		if (to === this.location) {
+		if (to === this.location && this.isViewContainerUserReachable(container, to)) {
 			this.onDidRegisterViewContainers([container]);
 		}
 	}
@@ -516,11 +525,20 @@ export class PaneCompositeBar extends Disposable {
 
 	private getViewContainer(id: string): ViewContainer | undefined {
 		const viewContainer = this.viewDescriptorService.getViewContainerById(id);
-		return viewContainer && this.viewDescriptorService.getViewContainerLocation(viewContainer) === this.location ? viewContainer : undefined;
+		return viewContainer
+			&& this.viewDescriptorService.getViewContainerLocation(viewContainer) === this.location
+			&& this.isViewContainerUserReachable(viewContainer)
+			? viewContainer
+			: undefined;
 	}
 
 	private getViewContainers(): readonly ViewContainer[] {
-		return this.viewDescriptorService.getViewContainersByLocation(this.location);
+		return this.viewDescriptorService.getViewContainersByLocation(this.location)
+			.filter(viewContainer => this.isViewContainerUserReachable(viewContainer));
+	}
+
+	private isViewContainerUserReachable(viewContainer: ViewContainer, location: ViewContainerLocation = this.location): boolean {
+		return Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).isViewContainerUserReachable(viewContainer, location);
 	}
 
 	private updateCompositeBarItemsFromStorage(retainExisting: boolean): void {
