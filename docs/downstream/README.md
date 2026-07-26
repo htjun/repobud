@@ -13,6 +13,9 @@ downstream.
   origin, activation precedence, conflicts, and the active-repository view.
 - [MCP Integrations](mcp-integrations.md) separates portable server definitions, repository
   activation, client projection, runtime health, and account authentication.
+- [macOS release contract](macos-release.md) defines preview packaging, publisher prerequisites,
+  supported client fixtures, signing and notarization gates, update boundaries, and release
+  evidence.
 
 Product behavior belongs in dedicated downstream services and contributions. Upstream source should
 remain unchanged unless a narrower composition seam is not viable and the exception is documented

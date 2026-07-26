@@ -752,7 +752,6 @@ async function main() {
 			request => request.userAgent?.startsWith('Repository-Context-Workbench/')
 		));
 		assert.ok(githubFixture.requests.every(request => request.hasAuthorization));
-		const fixtureSecrets = Object.values(fixtureTokens);
 		await assertTreeExcludes(fixturePath, fixtureSecrets);
 		await assertTreeExcludes(existingConfigurationPath, fixtureSecrets);
 		await assertTreeExcludes(userDataPath, fixtureSecrets);

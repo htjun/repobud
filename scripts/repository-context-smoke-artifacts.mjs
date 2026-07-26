@@ -89,13 +89,25 @@ export async function captureSmokeFailureArtifacts(options) {
 	await mkdir(artifactDirectory, { recursive: true });
 
 	if (options.page) {
-		await options.page.evaluate(() => {
-			for (const input of document.querySelectorAll('input[type="password"], [data-secret] input')) {
-				if (input instanceof HTMLInputElement) {
-					input.value = '';
+		await options.page.evaluate((values) => {
+			for (const input of document.querySelectorAll('input, textarea')) {
+				if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+					if (input.type === 'password' || values.some(value => input.value.includes(value))) {
+						input.value = '';
+					}
 				}
 			}
-		}).catch(() => undefined);
+			const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+			let node;
+			while ((node = walker.nextNode())) {
+				if (!node.textContent) {
+					continue;
+				}
+				for (const value of values) {
+					node.textContent = node.textContent.replaceAll(value, '[REDACTED]');
+				}
+			}
+		}, sensitiveValues).catch(() => undefined);
 
 		const screenshotPath = join(artifactDirectory, 'screenshot.png');
 		await options.page.screenshot({ path: screenshotPath, fullPage: true })

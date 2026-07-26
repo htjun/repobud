@@ -3,10 +3,15 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import process from 'node:process';
-import { repositoryRoot, verifyRepositoryContextPackage } from './repository-context-package.mjs';
+import {
+	repositoryRoot,
+	resolvePackagePaths,
+	verifyRepositoryContextPackage,
+} from './repository-context-package.mjs';
 
 if (process.platform !== 'darwin' || process.arch !== 'arm64') {
 	throw new Error('The initial Repository Context package target requires macOS on Apple silicon.');
@@ -39,6 +44,36 @@ await run(process.execPath, [
 	'--max-old-space-size=8192',
 	join(repositoryRoot, 'node_modules', 'gulp', 'bin', 'gulp.js'),
 	'vscode-darwin-arm64',
+]);
+
+const packagePaths = resolvePackagePaths();
+const product = JSON.parse(await readFile(join(repositoryRoot, 'product.json'), 'utf8'));
+await run('/usr/bin/plutil', [
+	'-replace',
+	'LSMinimumSystemVersion',
+	'-string',
+	product.darwinMinimumSystemVersion,
+	packagePaths.infoPlistPath,
+]);
+for (const privacyKey of [
+	'NSAppleEventsUsageDescription',
+	'NSAudioCaptureUsageDescription',
+	'NSCameraUsageDescription',
+	'NSMicrophoneUsageDescription',
+]) {
+	spawnSync('/usr/libexec/PlistBuddy', [
+		'-c',
+		`Delete :${privacyKey}`,
+		packagePaths.infoPlistPath,
+	], { stdio: 'ignore' });
+}
+await run('/usr/bin/codesign', [
+	'--force',
+	'--deep',
+	'--sign',
+	'-',
+	'--preserve-metadata=entitlements',
+	packagePaths.applicationPath,
 ]);
 
 const result = await verifyRepositoryContextPackage();

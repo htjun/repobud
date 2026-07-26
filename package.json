@@ -64,6 +64,8 @@
     "smoketest-repository-context-shell": "node scripts/test-repository-context-shell.mjs",
     "test-repository-context-smoke-artifacts": "node scripts/test-repository-context-smoke-artifacts.mjs",
     "check-git-command-policy": "node scripts/check-git-command-policy.mjs",
+    "test-git-command-inventory": "node scripts/test-git-command-inventory.mjs",
+    "rehearse:upstream-upgrade": "node scripts/rehearse-upstream-upgrade.mjs",
     "download-builtin-extensions": "node build/lib/builtInExtensions.ts",
     "download-builtin-extensions-cg": "node build/lib/builtInExtensionsCG.ts",
     "monaco-compile-check": "tsc --project src/tsconfig.monaco.json --noEmit",

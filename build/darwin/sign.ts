@@ -95,40 +95,24 @@ async function main(buildDir?: string): Promise<void> {
 	// universal will get its copy from the x64 build.
 	if (arch !== 'universal') {
 		await spawn('plutil', [
-			'-insert',
+			'-replace',
+			'LSMinimumSystemVersion',
+			'-string',
+			product.darwinMinimumSystemVersion,
+			infoPlistPath,
+		]);
+		for (const privacyKey of [
 			'NSAppleEventsUsageDescription',
-			'-string',
-			'An application in Visual Studio Code wants to use AppleScript.',
-			`${infoPlistPath}`
-		]);
-		await spawn('plutil', [
-			'-replace',
-			'NSMicrophoneUsageDescription',
-			'-string',
-			'An application in Visual Studio Code wants to use the Microphone.',
-			`${infoPlistPath}`
-		]);
-		await spawn('plutil', [
-			'-replace',
-			'NSCameraUsageDescription',
-			'-string',
-			'An application in Visual Studio Code wants to use the Camera.',
-			`${infoPlistPath}`
-		]);
-		await spawn('plutil', [
-			'-replace',
 			'NSAudioCaptureUsageDescription',
-			'-string',
-			'An application in Visual Studio Code wants to use Audio Capture.',
-			`${infoPlistPath}`
-		]);
-		await spawn('plutil', [
-			'-insert',
-			'NSLocalNetworkUsageDescription',
-			'-string',
-			'The app uses your local network for DNS resolution and to connect to locally running services.',
-			`${infoPlistPath}`
-		]);
+			'NSCameraUsageDescription',
+			'NSMicrophoneUsageDescription',
+		]) {
+			await spawn('/usr/libexec/PlistBuddy', [
+				'-c',
+				`Delete :${privacyKey}`,
+				infoPlistPath,
+			]).catch(() => undefined);
+		}
 	}
 
 	await retrySignOnKeychainError(() => sign(appOpts));

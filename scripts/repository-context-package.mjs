@@ -42,6 +42,16 @@ function readArchitectures(executablePath) {
 		.filter(Boolean);
 }
 
+function verifyStrictSignature(applicationPath) {
+	execFileSync('/usr/bin/codesign', [
+		'--verify',
+		'--deep',
+		'--strict',
+		'--verbose=2',
+		applicationPath,
+	], { stdio: 'pipe' });
+}
+
 export async function verifyRepositoryContextPackage(options = {}) {
 	const paths = resolvePackagePaths(options.packageRoot);
 	const [sourceProduct, sourcePackage, packagedProduct] = await Promise.all([
@@ -57,6 +67,8 @@ export async function verifyRepositoryContextPackage(options = {}) {
 	).trim();
 	const bundleIdentifier = readPlistValue(paths.infoPlistPath, 'CFBundleIdentifier');
 	const bundleName = readPlistValue(paths.infoPlistPath, 'CFBundleName');
+	const minimumSystemVersion = readPlistValue(paths.infoPlistPath, 'LSMinimumSystemVersion');
+	const iconFile = readPlistValue(paths.infoPlistPath, 'CFBundleIconFile');
 	const architectures = readArchitectures(paths.executablePath);
 
 	assert.equal(sourceProduct.nameShort, 'Repository Context');
@@ -66,9 +78,18 @@ export async function verifyRepositoryContextPackage(options = {}) {
 	assert.equal(packagedProduct.nameLong, sourceProduct.nameLong);
 	assert.equal(packagedProduct.applicationName, sourceProduct.applicationName);
 	assert.equal(packagedProduct.darwinBundleIdentifier, sourceProduct.darwinBundleIdentifier);
+	assert.equal(packagedProduct.darwinMinimumSystemVersion, sourceProduct.darwinMinimumSystemVersion);
 	assert.equal(bundleIdentifier, sourceProduct.darwinBundleIdentifier);
 	assert.equal(bundleName, sourceProduct.nameShort);
+	assert.equal(minimumSystemVersion, sourceProduct.darwinMinimumSystemVersion);
+	assert.equal(iconFile, `${sourceProduct.nameShort}.icns`);
 	assert.equal(packagedProduct.version, sourcePackage.version);
+	assert.equal(packagedProduct.updateUrl, undefined, 'The update service must remain disabled for preview packages.');
+	assert.doesNotMatch(
+		JSON.stringify(packagedProduct),
+		/vscode-cdn\.net/i,
+		'The focused package must not use the Microsoft webview CDN.'
+	);
 	assert.ok(
 		architectures.includes('arm64'),
 		`The packaged executable must contain arm64, found: ${architectures.join(', ')}`
@@ -78,6 +99,7 @@ export async function verifyRepositoryContextPackage(options = {}) {
 		/\b(?:Code - OSS|Visual Studio Code|VS Code)\b/i,
 		'The packaged application exposes an upstream product identity.'
 	);
+	verifyStrictSignature(paths.applicationPath);
 
 	const isCurrent = packagedProduct.commit === expectedCommit;
 	if (!isCurrent && !options.allowStale) {
@@ -95,6 +117,7 @@ export async function verifyRepositoryContextPackage(options = {}) {
 		expectedCommit,
 		isCurrent,
 		bundleIdentifier,
+		minimumSystemVersion,
 		architectures,
 	};
 }

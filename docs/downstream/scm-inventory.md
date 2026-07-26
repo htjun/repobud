@@ -86,3 +86,14 @@ Every stable-tag upgrade must:
 3. Pass SCM graph and Git extension-host tests.
 4. Run the downstream repository switching, read-only diff, and retained-command E2E tracers.
 5. Record intentional additions, removals, and proposed API changes before the upgrade is accepted.
+
+Rehearse the declaration comparison without changing the working tree:
+
+```bash
+npm run rehearse:upstream-upgrade -- --tag 1.130.0
+```
+
+Pass `--fetch` only when the exact stable tag is not already present locally. A candidate that adds,
+removes, or changes Git command/menu declarations stops for review. After reconciling the policy on
+an upgrade branch, `--allow-declaration-delta` acknowledges the reviewed delta; removal of a
+retained command remains a hard failure.
