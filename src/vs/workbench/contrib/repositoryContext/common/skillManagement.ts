@@ -6,6 +6,10 @@
 import { Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import {
+	SkillProjectionMode,
+	SkillProjectionState,
+} from '../../../../platform/repositoryContext/common/skillProjection.js';
 import { CanonicalActivation, ICanonicalCapabilitySetting } from './canonicalConfiguration.js';
 
 export const GLOBAL_SKILLS_DIRECTORY = 'skills';
@@ -16,6 +20,15 @@ export type SkillOrigin = 'global' | 'repository' | 'plugin';
 export type SkillOverride = 'inherit' | CanonicalActivation;
 export type SkillSection = 'enabled' | 'available' | 'needsAttention';
 export type SkillActivationSource = 'default' | 'global' | 'repository';
+export type SkillClient = 'codex';
+
+export interface ISkillClientProjection {
+	readonly client: SkillClient;
+	readonly state: SkillProjectionState;
+	readonly mode?: SkillProjectionMode;
+	readonly target?: URI;
+	readonly detail?: string;
+}
 
 export interface ICanonicalSkillDefinition {
 	readonly id: string;
@@ -35,6 +48,8 @@ export interface IEffectiveSkill {
 	readonly activationSource: SkillActivationSource;
 	readonly repositoryOverride: SkillOverride;
 	readonly section: SkillSection;
+	readonly definitionResource?: URI;
+	readonly projections: readonly ISkillClientProjection[];
 	readonly issue?: string;
 }
 
@@ -63,6 +78,9 @@ export interface IContextSkillService {
 	refresh(): Promise<void>;
 	setRepositoryOverride(skillId: string, override: SkillOverride): Promise<void>;
 	setGlobalActivation(skillId: string, activation: CanonicalActivation): Promise<void>;
+	projectToCodex(skillId: string): Promise<void>;
+	importCodexChanges(skillId: string): Promise<void>;
+	restoreCodexProjection(skillId: string): Promise<void>;
 }
 
 const originOrder: readonly SkillOrigin[] = ['repository', 'global', 'plugin'];
@@ -148,6 +166,8 @@ export function resolveEffectiveSkills(
 			origins,
 			...activation,
 			section,
+			definitionResource: preferred?.resource,
+			projections: [],
 			issue: issues.length > 0 ? issues.join(' ') : undefined,
 		});
 	}

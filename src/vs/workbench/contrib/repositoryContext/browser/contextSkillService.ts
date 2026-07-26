@@ -5,11 +5,19 @@
 
 import { Emitter } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { basename, joinPath } from '../../../../base/common/resources.js';
+import { basename, dirname, joinPath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { parseFrontMatter, YamlParseError } from '../../../../base/common/yaml.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import {
+	IRepositoryContextSkillProjectionService,
+	ISkillProjectionManifest,
+	ISkillProjectionRequest,
+	ISkillProjectionResult,
+} from '../../../../platform/repositoryContext/common/skillProjection.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { IPathService } from '../../../services/path/common/pathService.js';
 import {
 	CanonicalActivation,
 	createCanonicalConfiguration,
@@ -25,6 +33,8 @@ import {
 	ICanonicalSkillDefinition,
 	IContextSkillService,
 	IEffectiveSkill,
+	IEffectiveSkillSections,
+	ISkillClientProjection,
 	ISkillManagementSnapshot,
 	REPOSITORY_SKILLS_DIRECTORY,
 	resolveEffectiveSkills,
@@ -34,6 +44,12 @@ import {
 } from '../common/skillManagement.js';
 
 const emptySections = resolveEffectiveSkills([], {}, {});
+const projectionManifestStorageKey = 'repositoryContext.skillProjection.manifests';
+
+interface IStoredProjectionManifests {
+	readonly version: 1;
+	readonly manifests: Readonly<Record<string, ISkillProjectionManifest>>;
+}
 
 export class ContextSkillService extends Disposable implements IContextSkillService {
 
@@ -48,6 +64,9 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 		@IFileService private readonly fileService: IFileService,
 		@IRepositoryCatalogService private readonly repositoryCatalogService: IRepositoryCatalogService,
 		@ICanonicalConfigurationService private readonly canonicalConfigurationService: ICanonicalConfigurationService,
+		@IRepositoryContextSkillProjectionService private readonly projectionService: IRepositoryContextSkillProjectionService,
+		@IStorageService private readonly storageService: IStorageService,
+		@IPathService private readonly pathService: IPathService,
 	) {
 		super();
 		this._snapshot = {
@@ -109,11 +128,15 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 			return;
 		}
 
-		const sections = resolveEffectiveSkills(
+		const resolvedSections = resolveEffectiveSkills(
 			[...globalDefinitions, ...repositoryDefinitions],
 			globalConfiguration.skills,
 			repositoryConfiguration.skills
 		);
+		const sections = await this.resolveCodexProjections(resolvedSections, activeRepository);
+		if (request !== this.refreshRequest) {
+			return;
+		}
 		const globalSections = resolveEffectiveSkills(globalDefinitions, globalConfiguration.skills, {});
 		this.updateSnapshot({
 			activeRepository,
@@ -157,6 +180,28 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 			},
 		});
 		await this.refresh();
+	}
+
+	async projectToCodex(skillId: string): Promise<void> {
+		const skill = this.getSkill(skillId);
+		if (skill.activation !== 'on' || skill.section === 'needsAttention') {
+			throw new Error('Only an enabled, valid Skill can be projected to Codex.');
+		}
+		await this.runCodexProjectionOperation(skill, request => this.projectionService.project(request));
+	}
+
+	async importCodexChanges(skillId: string): Promise<void> {
+		await this.runCodexProjectionOperation(
+			this.getSkill(skillId),
+			request => this.projectionService.importChanges(request)
+		);
+	}
+
+	async restoreCodexProjection(skillId: string): Promise<void> {
+		await this.runCodexProjectionOperation(
+			this.getSkill(skillId),
+			request => this.projectionService.restore(request)
+		);
 	}
 
 	private async readGlobalConfiguration(errors: string[]): Promise<ICanonicalConfiguration> {
@@ -260,6 +305,155 @@ export class ContextSkillService extends Disposable implements IContextSkillServ
 
 	private flattenSections(sections: ISkillManagementSnapshot['sections']): IEffectiveSkill[] {
 		return [...sections.enabled, ...sections.available, ...sections.needsAttention];
+	}
+
+	private async resolveCodexProjections(
+		sections: IEffectiveSkillSections,
+		activeRepository: URI | undefined,
+	): Promise<IEffectiveSkillSections> {
+		const resolveSection = (skills: readonly IEffectiveSkill[]) =>
+			Promise.all(skills.map(skill => this.resolveCodexProjection(skill, activeRepository)));
+		const [enabled, available, needsAttention] = await Promise.all([
+			resolveSection(sections.enabled),
+			resolveSection(sections.available),
+			resolveSection(sections.needsAttention),
+		]);
+		return { enabled, available, needsAttention };
+	}
+
+	private async resolveCodexProjection(
+		skill: IEffectiveSkill,
+		activeRepository: URI | undefined,
+	): Promise<IEffectiveSkill> {
+		let projection: ISkillClientProjection;
+		try {
+			const request = this.createCodexProjectionRequest(skill, activeRepository);
+			if (!request) {
+				projection = {
+					client: 'codex',
+					state: 'unsupported',
+					detail: skill.issue ?? 'The canonical Skill source is unavailable.',
+				};
+			} else {
+				const result = await this.projectionService.inspect(request);
+				projection = this.toClientProjection(result, request.target);
+			}
+		} catch (error) {
+			projection = {
+				client: 'codex',
+				state: 'unsupported',
+				detail: this.toErrorMessage('Cannot inspect Codex projection', error),
+			};
+		}
+		return {
+			...skill,
+			projections: [projection],
+		};
+	}
+
+	private createCodexProjectionRequest(
+		skill: IEffectiveSkill,
+		activeRepository: URI | undefined,
+	): ISkillProjectionRequest | undefined {
+		if (skill.section === 'needsAttention' || !skill.definitionResource || !activeRepository) {
+			return undefined;
+		}
+
+		const source = dirname(skill.definitionResource);
+		const targetRoot = skill.origins[0] === 'repository'
+			? joinPath(activeRepository, '.agents', 'skills')
+			: joinPath(this.pathService.userHome({ preferLocal: true }), '.agents', 'skills');
+		const target = joinPath(targetRoot, skill.id);
+		return {
+			client: 'codex',
+			skillId: skill.id,
+			source,
+			target,
+			manifest: this.getProjectionManifest(target),
+		};
+	}
+
+	private getSkill(skillId: string): IEffectiveSkill {
+		const skill = this.flattenSections(this._snapshot.sections).find(candidate => candidate.id === skillId);
+		if (!skill) {
+			throw new Error(`Skill "${skillId}" is not available in the active repository.`);
+		}
+		return skill;
+	}
+
+	private async runCodexProjectionOperation(
+		skill: IEffectiveSkill,
+		operation: (request: ISkillProjectionRequest) => Promise<ISkillProjectionResult>,
+	): Promise<void> {
+		const request = this.createCodexProjectionRequest(skill, this.repositoryCatalogService.activeRepository);
+		if (!request) {
+			throw new Error(`Skill "${skill.id}" has no compatible canonical source for Codex.`);
+		}
+		const result = await operation(request);
+		this.storeProjectionManifest(request.target, result.manifest);
+		await this.refresh();
+	}
+
+	private toClientProjection(result: ISkillProjectionResult, target: URI): ISkillClientProjection {
+		return {
+			client: 'codex',
+			state: result.state,
+			mode: result.mode,
+			target,
+			detail: result.detail,
+		};
+	}
+
+	private getProjectionManifest(target: URI): ISkillProjectionManifest | undefined {
+		return this.getStoredProjectionManifests()[target.toString()];
+	}
+
+	private storeProjectionManifest(target: URI, manifest: ISkillProjectionManifest | undefined): void {
+		const manifests = { ...this.getStoredProjectionManifests() };
+		if (manifest) {
+			manifests[target.toString()] = manifest;
+		} else {
+			delete manifests[target.toString()];
+		}
+		this.storageService.store(
+			projectionManifestStorageKey,
+			JSON.stringify({ version: 1, manifests } satisfies IStoredProjectionManifests),
+			StorageScope.PROFILE,
+			StorageTarget.MACHINE
+		);
+	}
+
+	private getStoredProjectionManifests(): Readonly<Record<string, ISkillProjectionManifest>> {
+		const stored = this.storageService.getObject<Partial<IStoredProjectionManifests>>(
+			projectionManifestStorageKey,
+			StorageScope.PROFILE
+		);
+		if (stored?.version !== 1 || !stored.manifests || typeof stored.manifests !== 'object') {
+			return {};
+		}
+
+		const manifests: Record<string, ISkillProjectionManifest> = {};
+		for (const [target, manifest] of Object.entries(stored.manifests)) {
+			if (this.isProjectionManifest(manifest)) {
+				manifests[target] = manifest;
+			}
+		}
+		return manifests;
+	}
+
+	private isProjectionManifest(value: unknown): value is ISkillProjectionManifest {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+		const candidate = value as Partial<ISkillProjectionManifest>;
+		return candidate.version === 1 &&
+			candidate.client === 'codex' &&
+			typeof candidate.skillId === 'string' &&
+			candidate.mode === 'managed-copy' &&
+			typeof candidate.source === 'string' &&
+			typeof candidate.target === 'string' &&
+			typeof candidate.sourceHash === 'string' &&
+			typeof candidate.outputHash === 'string';
 	}
 
 	private toErrorMessage(context: string, error: unknown): string {

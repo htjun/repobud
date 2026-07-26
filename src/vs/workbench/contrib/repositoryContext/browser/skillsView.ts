@@ -11,6 +11,7 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
@@ -23,6 +24,7 @@ import { IViewDescriptorService } from '../../../common/views.js';
 import {
 	IContextSkillService,
 	IEffectiveSkill,
+	ISkillClientProjection,
 	ISkillManagementSnapshot,
 	SkillOrigin,
 	SkillOverride,
@@ -49,6 +51,15 @@ const overrideLabels: Readonly<Record<SkillOverride, string>> = {
 	off: localize('repositoryContextSkillOverrideOff', 'Off'),
 };
 
+const projectionStateLabels: Readonly<Record<ISkillClientProjection['state'], string>> = {
+	missing: localize('repositoryContextSkillProjectionMissing', 'Missing'),
+	linked: localize('repositoryContextSkillProjectionLinked', 'Linked'),
+	copied: localize('repositoryContextSkillProjectionCopied', 'Copied'),
+	modified: localize('repositoryContextSkillProjectionModified', 'Modified'),
+	outdated: localize('repositoryContextSkillProjectionOutdated', 'Outdated'),
+	unsupported: localize('repositoryContextSkillProjectionUnsupported', 'Unsupported'),
+};
+
 export class SkillsViewPane extends ViewPane {
 
 	private readonly renderedDisposables = this._register(new DisposableStore());
@@ -67,6 +78,7 @@ export class SkillsViewPane extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 		@IContextSkillService private readonly skillService: IContextSkillService,
 		@ICommandService private readonly commandService: ICommandService,
+		@IDialogService private readonly dialogService: IDialogService,
 		@INotificationService private readonly notificationService: INotificationService,
 	) {
 		super(
@@ -199,6 +211,7 @@ export class SkillsViewPane extends ViewPane {
 			const issue = dom.append(row, dom.$('.repository-context-skill-issue'));
 			issue.textContent = skill.issue;
 		}
+		this.renderCodexProjection(row, skill);
 
 		const controls = dom.append(row, dom.$('.repository-context-skill-overrides'));
 		controls.setAttribute('role', 'group');
@@ -223,6 +236,112 @@ export class SkillsViewPane extends ViewPane {
 
 		const effective = dom.append(row, dom.$('.repository-context-skill-effective'));
 		effective.textContent = this.getEffectiveLabel(skill);
+	}
+
+	private renderCodexProjection(row: HTMLElement, skill: IEffectiveSkill): void {
+		const projection = skill.projections.find(candidate => candidate.client === 'codex');
+		if (!projection) {
+			return;
+		}
+
+		const container = dom.append(row, dom.$('.repository-context-skill-projection'));
+		const badge = dom.append(
+			container,
+			dom.$(`span.repository-context-skill-client.${projection.state}`)
+		);
+		badge.textContent = localize(
+			'repositoryContextSkillCodexProjectionBadge',
+			'Codex · {0}',
+			projectionStateLabels[projection.state]
+		);
+		if (projection.detail) {
+			badge.title = projection.detail;
+		}
+
+		const actions = dom.append(container, dom.$('.repository-context-skill-projection-actions'));
+		if (projection.state === 'missing' && skill.activation === 'on' && skill.section !== 'needsAttention') {
+			this.renderProjectionAction(
+				actions,
+				localize('repositoryContextProjectSkillToCodex', 'Project'),
+				() => this.runProjectionAction(() => this.skillService.projectToCodex(skill.id))
+			);
+		}
+		if (projection.state === 'modified') {
+			this.renderProjectionAction(
+				actions,
+				localize('repositoryContextImportCodexSkillChanges', 'Import changes'),
+				() => this.confirmImport(skill)
+			);
+		}
+		if (projection.state === 'modified' || projection.state === 'outdated') {
+			this.renderProjectionAction(
+				actions,
+				localize('repositoryContextRestoreCodexSkillProjection', 'Restore projection'),
+				() => this.confirmRestore(skill)
+			);
+		}
+	}
+
+	private renderProjectionAction(
+		container: HTMLElement,
+		label: string,
+		action: () => Promise<void>,
+	): void {
+		const button = dom.append(
+			container,
+			dom.$<HTMLButtonElement>('button.repository-context-skill-projection-action')
+		);
+		button.type = 'button';
+		button.textContent = label;
+		this.renderedDisposables.add(dom.addDisposableListener(button, dom.EventType.CLICK, () => {
+			void action();
+		}));
+	}
+
+	private async confirmImport(skill: IEffectiveSkill): Promise<void> {
+		const result = await this.dialogService.confirm({
+			type: 'warning',
+			message: localize(
+				'repositoryContextConfirmImportCodexSkillChanges',
+				'Import projected changes into the canonical Skill?'
+			),
+			detail: localize(
+				'repositoryContextConfirmImportCodexSkillChangesDetail',
+				'The external Codex copy will replace the canonical content for "{0}".',
+				skill.name
+			),
+			primaryButton: localize('repositoryContextImportChangesPrimaryButton', 'Import changes'),
+		});
+		if (result.confirmed) {
+			await this.runProjectionAction(() => this.skillService.importCodexChanges(skill.id));
+		}
+	}
+
+	private async confirmRestore(skill: IEffectiveSkill): Promise<void> {
+		const result = await this.dialogService.confirm({
+			type: 'warning',
+			message: localize(
+				'repositoryContextConfirmRestoreCodexSkillProjection',
+				'Restore the Codex projection from canonical content?'
+			),
+			detail: localize(
+				'repositoryContextConfirmRestoreCodexSkillProjectionDetail',
+				'External changes in the Codex target for "{0}" will be replaced.',
+				skill.name
+			),
+			primaryButton: localize('repositoryContextRestoreProjectionPrimaryButton', 'Restore projection'),
+		});
+		if (result.confirmed) {
+			await this.runProjectionAction(() => this.skillService.restoreCodexProjection(skill.id));
+		}
+	}
+
+	private async runProjectionAction(action: () => Promise<void>): Promise<void> {
+		try {
+			await action();
+		} catch (error) {
+			this.notificationService.error(error instanceof Error ? error.message : String(error));
+		}
 	}
 
 	private async setOverride(skill: IEffectiveSkill, override: SkillOverride): Promise<void> {

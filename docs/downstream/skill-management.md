@@ -41,3 +41,27 @@ Each row shows its canonical origin independently from the activation source.
 Global defaults are managed from the Skills overflow menu rather than primary navigation. This
 keeps the current repository and its effective state as the default workflow while still allowing
 the user-owned global library to be managed explicitly.
+
+## Codex projection
+
+An enabled, valid Skill can be projected to Codex from its active-repository row. The projection
+always points at the complete canonical Skill directory, including scripts, references, assets, and
+client metadata:
+
+```text
+Global origin:     ~/.agents/skills/<skill-id>
+Repository origin: <active-repository>/.agents/skills/<skill-id>
+```
+
+Repository Context Workbench prefers a directory symlink so canonical content is not duplicated.
+If the local filesystem does not support that link, it creates a managed copy and records
+deterministic SHA-256 hashes for the canonical source and projected output. The manifest and target
+path are machine-local application state; they are never written to either canonical Git
+repository.
+
+The Codex badge reports `Missing`, `Linked`, `Copied`, `Modified`, `Outdated`, or `Unsupported`.
+An untracked or externally changed target is never overwritten automatically. `Import changes`
+explicitly replaces canonical content with the target after validation. `Restore projection`
+explicitly replaces the target from canonical content. Both operations require confirmation.
+Use `Refresh Skills` after changing a projection outside the app. Restart Codex when its installed
+Skill inventory does not update live.

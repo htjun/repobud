@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { appendFile, chmod, mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -344,6 +344,71 @@ async function main() {
 		assert.match(await conflictSkill.innerText(), /Global/i);
 		assert.match(await conflictSkill.innerText(), /Conflicting canonical definitions/);
 		assert.match(await conflictSkill.innerText(), /Unavailable until the issue is resolved/);
+
+		await releaseSkill.getByRole('button', { name: 'On' }).click();
+		await waitFor(async () => {
+			const configuration = JSON.parse(await readFile(
+				join(fixturePath, '.repository-context', 'config.json'),
+				'utf8'
+			));
+			return configuration.skills.release?.activation === 'on';
+		}, 'Repository Skill On override was not persisted.');
+		await releaseSkill.getByRole('button', { name: 'Project' }).click();
+		const releaseProjectionPath = join(fixturePath, '.agents', 'skills', 'release');
+		const canonicalReleasePath = join(fixturePath, '.repository-context', 'skills', 'release');
+		await waitFor(
+			async () => existsSync(releaseProjectionPath) && (await lstat(releaseProjectionPath)).isSymbolicLink(),
+			'Repository Skill was not projected to Codex as a directory symlink.'
+		);
+		assert.equal(await realpath(releaseProjectionPath), await realpath(canonicalReleasePath));
+		await releaseSkill.getByText('Codex · Linked', { exact: true }).waitFor();
+
+		await unlink(releaseProjectionPath);
+		await writeSkillFixture(
+			join(fixturePath, '.agents', 'skills'),
+			'release',
+			'Release',
+			'Imported external release workflow.'
+		);
+		await page.getByRole('button', { name: 'Refresh Skills' }).click();
+		await releaseSkill.getByText('Codex · Modified', { exact: true }).waitFor();
+		await releaseSkill.getByRole('button', { name: 'Import changes' }).click();
+		const importDialog = page.getByRole('dialog').filter({
+			hasText: 'Import projected changes into the canonical Skill?',
+		});
+		await importDialog.waitFor();
+		await importDialog.getByRole('button', { name: 'Import changes' }).click();
+		await waitFor(
+			async () => (await readFile(join(canonicalReleasePath, 'SKILL.md'), 'utf8'))
+				.includes('Imported external release workflow.'),
+			'Explicit projection import did not update the canonical Skill.'
+		);
+		assert.equal((await lstat(releaseProjectionPath)).isSymbolicLink(), true);
+
+		await unlink(releaseProjectionPath);
+		await writeSkillFixture(
+			join(fixturePath, '.agents', 'skills'),
+			'release',
+			'Release',
+			'Discarded external release workflow.'
+		);
+		await page.getByRole('button', { name: 'Refresh Skills' }).click();
+		await releaseSkill.getByText('Codex · Modified', { exact: true }).waitFor();
+		await releaseSkill.getByRole('button', { name: 'Restore projection' }).click();
+		const restoreDialog = page.getByRole('dialog').filter({
+			hasText: 'Restore the Codex projection from canonical content?',
+		});
+		await restoreDialog.waitFor();
+		await restoreDialog.getByRole('button', { name: 'Restore projection' }).click();
+		await waitFor(
+			async () => existsSync(releaseProjectionPath) && (await lstat(releaseProjectionPath)).isSymbolicLink(),
+			'Explicit projection restore did not recreate the canonical directory symlink.'
+		);
+		assert.equal(await realpath(releaseProjectionPath), await realpath(canonicalReleasePath));
+		assert.match(
+			await readFile(join(canonicalReleasePath, 'SKILL.md'), 'utf8'),
+			/Imported external release workflow/
+		);
 
 		await reviewSkill.getByRole('button', { name: 'Off' }).click();
 		await waitFor(async () => {

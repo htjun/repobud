@@ -170,6 +170,60 @@
 	margin-top: var(--vscode-spacing-size60);
 }
 
+.repository-context-skill-projection {
+	align-items: center;
+	display: flex;
+	gap: var(--vscode-spacing-size60);
+	justify-content: space-between;
+	margin-top: var(--vscode-spacing-size80);
+}
+
+.repository-context-skill-client {
+	border: 1px solid var(--vscode-charts-blue);
+	border-radius: var(--vscode-cornerRadius-large);
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-fontSize-label3);
+	padding: var(--vscode-spacing-size20) var(--vscode-spacing-size60);
+}
+
+.repository-context-skill-client.linked,
+.repository-context-skill-client.copied {
+	border-color: var(--vscode-testing-iconPassed);
+	color: var(--vscode-testing-iconPassed);
+}
+
+.repository-context-skill-client.modified,
+.repository-context-skill-client.outdated {
+	border-color: var(--vscode-testing-iconQueued);
+	color: var(--vscode-testing-iconQueued);
+}
+
+.repository-context-skill-client.unsupported {
+	border-color: var(--vscode-testing-iconFailed);
+	color: var(--vscode-testing-iconFailed);
+}
+
+.repository-context-skill-projection-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--vscode-spacing-size40);
+	justify-content: flex-end;
+}
+
+.repository-context-skill-projection-action {
+	background: transparent;
+	border: 0;
+	color: var(--vscode-textLink-foreground);
+	cursor: pointer;
+	font-size: var(--vscode-fontSize-label3);
+	padding: 2px;
+}
+
+.repository-context-skill-projection-action:hover {
+	color: var(--vscode-textLink-activeForeground);
+	text-decoration: underline;
+}
+
 .repository-context-skill-issue {
 	font-size: var(--vscode-fontSize-label2);
 	margin: var(--vscode-spacing-size80) 0 0;
@@ -204,6 +258,7 @@
 }
 
 .repository-context-skill-override:focus-visible,
+.repository-context-skill-projection-action:focus-visible,
 .repository-context-skills-link:focus-visible {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: 1px;

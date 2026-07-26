@@ -15,7 +15,13 @@ import { FileService } from '../../../../../platform/files/common/fileService.js
 import { FileSystemProviderCapabilities } from '../../../../../platform/files/common/files.js';
 import { InMemoryFileSystemProvider } from '../../../../../platform/files/common/inMemoryFilesystemProvider.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
-import { InMemoryStorageService } from '../../../../../platform/storage/common/storage.js';
+import {
+	IRepositoryContextSkillProjectionService,
+	ISkillProjectionRequest,
+	ISkillProjectionResult,
+} from '../../../../../platform/repositoryContext/common/skillProjection.js';
+import { InMemoryStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
+import { IPathService } from '../../../../services/path/common/pathService.js';
 import { CanonicalConfigurationService } from '../../browser/canonicalConfigurationService.js';
 import { ContextSkillService } from '../../browser/contextSkillService.js';
 import { createCanonicalConfiguration } from '../../common/canonicalConfiguration.js';
@@ -44,6 +50,49 @@ class TestRepositoryCatalogService implements IRepositoryCatalogService {
 	async refresh(): Promise<void> { }
 }
 
+class TestSkillProjectionService implements IRepositoryContextSkillProjectionService {
+
+	declare readonly _serviceBrand: undefined;
+	readonly requests: ISkillProjectionRequest[] = [];
+	readonly results = new Map<string, ISkillProjectionResult>();
+	importCount = 0;
+	restoreCount = 0;
+
+	async inspect(request: ISkillProjectionRequest): Promise<ISkillProjectionResult> {
+		this.requests.push(request);
+		return this.results.get(request.target.toString()) ?? { state: 'missing' };
+	}
+
+	async project(request: ISkillProjectionRequest): Promise<ISkillProjectionResult> {
+		const result: ISkillProjectionResult = {
+			state: 'copied',
+			mode: 'managed-copy',
+			manifest: {
+				version: 1,
+				client: 'codex',
+				skillId: request.skillId,
+				mode: 'managed-copy',
+				source: request.source.fsPath,
+				target: request.target.fsPath,
+				sourceHash: 'a'.repeat(64),
+				outputHash: 'a'.repeat(64),
+			},
+		};
+		this.results.set(request.target.toString(), result);
+		return result;
+	}
+
+	async importChanges(request: ISkillProjectionRequest): Promise<ISkillProjectionResult> {
+		this.importCount++;
+		return this.project(request);
+	}
+
+	async restore(request: ISkillProjectionRequest): Promise<ISkillProjectionResult> {
+		this.restoreCount++;
+		return this.project(request);
+	}
+}
+
 suite('ContextSkillService', () => {
 
 	const disposables = new DisposableStore();
@@ -53,6 +102,8 @@ suite('ContextSkillService', () => {
 	let globalRepository: URI;
 	let catalogService: TestRepositoryCatalogService;
 	let canonicalConfigurationService: CanonicalConfigurationService;
+	let projectionService: TestSkillProjectionService;
+	let pathService: IPathService;
 	let skillService: ContextSkillService;
 
 	setup(async () => {
@@ -67,6 +118,10 @@ suite('ContextSkillService', () => {
 			fileService.createFolder(joinPath(globalRepository, '.git')),
 		]);
 		catalogService = new TestRepositoryCatalogService(activeRepository);
+		projectionService = new TestSkillProjectionService();
+		pathService = {
+			userHome: () => URI.from({ scheme: Schemas.inMemory, path: '/home' }),
+		} as unknown as IPathService;
 		canonicalConfigurationService = disposables.add(new CanonicalConfigurationService(
 			storageService,
 			fileService,
@@ -113,7 +168,10 @@ suite('ContextSkillService', () => {
 		skillService = disposables.add(new ContextSkillService(
 			fileService,
 			catalogService,
-			canonicalConfigurationService
+			canonicalConfigurationService,
+			projectionService,
+			storageService,
+			pathService
 		));
 		await skillService.refresh();
 
@@ -151,7 +209,10 @@ suite('ContextSkillService', () => {
 		skillService = disposables.add(new ContextSkillService(
 			fileService,
 			catalogService,
-			canonicalConfigurationService
+			canonicalConfigurationService,
+			projectionService,
+			storageService,
+			pathService
 		));
 		await skillService.refresh();
 
@@ -167,5 +228,69 @@ suite('ContextSkillService', () => {
 			skillService.snapshot.sections.needsAttention.find(skill => skill.id === 'invalid')?.issue ?? '',
 			/requires a frontmatter description/
 		);
+	});
+
+	test('resolves Codex targets and keeps managed-copy manifests in machine storage', async () => {
+		await Promise.all([
+			writeSkill(joinPath(globalRepository, 'skills'), 'review', 'Review', 'Review changes.'),
+			writeSkill(
+				joinPath(activeRepository, '.repository-context', 'skills'),
+				'release',
+				'Release',
+				'Prepare releases.'
+			),
+		]);
+		skillService = disposables.add(new ContextSkillService(
+			fileService,
+			catalogService,
+			canonicalConfigurationService,
+			projectionService,
+			storageService,
+			pathService
+		));
+		await skillService.refresh();
+
+		const requestedTargets = projectionService.requests.map(request => request.target.path);
+		assert.ok(requestedTargets.includes('/home/.agents/skills/review'));
+		assert.ok(requestedTargets.includes('/project/.agents/skills/release'));
+		assert.strictEqual(
+			skillService.snapshot.sections.enabled.find(skill => skill.id === 'review')
+				?.projections[0].state,
+			'missing'
+		);
+
+		await skillService.projectToCodex('review');
+		assert.strictEqual(
+			skillService.snapshot.sections.enabled.find(skill => skill.id === 'review')
+				?.projections[0].state,
+			'copied'
+		);
+		const stored = storageService.getObject(
+			'repositoryContext.skillProjection.manifests',
+			StorageScope.PROFILE
+		) as {
+			manifests: Record<string, { sourceHash: string; outputHash: string }>;
+		} | undefined;
+		const manifest = stored?.manifests['inmemory:/home/.agents/skills/review'];
+		assert.strictEqual(manifest?.sourceHash, 'a'.repeat(64));
+		assert.strictEqual(manifest?.outputHash, 'a'.repeat(64));
+
+		const target = URI.from({ scheme: Schemas.inMemory, path: '/home/.agents/skills/review' });
+		projectionService.results.set(target.toString(), {
+			state: 'modified',
+			mode: 'managed-copy',
+			detail: 'External change.',
+		});
+		await skillService.refresh();
+		assert.strictEqual(
+			skillService.snapshot.sections.enabled.find(skill => skill.id === 'review')
+				?.projections[0].state,
+			'modified'
+		);
+
+		await skillService.importCodexChanges('review');
+		await skillService.restoreCodexProjection('review');
+		assert.strictEqual(projectionService.importCount, 1);
+		assert.strictEqual(projectionService.restoreCount, 1);
 	});
 });

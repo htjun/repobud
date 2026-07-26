@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Codicon } from '../../../../base/common/codicons.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
@@ -16,6 +17,7 @@ import { REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS } from '../common/repositoryConte
 import { MANAGE_CONFIGURATION_REPOSITORY_COMMAND_ID } from './canonicalConfigurationActions.js';
 
 export const MANAGE_GLOBAL_SKILL_LIBRARY_COMMAND_ID = 'repositoryContext.manageGlobalSkillLibrary';
+export const REFRESH_CONTEXT_SKILLS_COMMAND_ID = 'repositoryContext.refreshSkills';
 
 interface IGlobalSkillQuickPickItem extends IQuickPickItem {
 	readonly skill: IEffectiveSkill;
@@ -24,6 +26,30 @@ interface IGlobalSkillQuickPickItem extends IQuickPickItem {
 interface IGlobalActivationQuickPickItem extends IQuickPickItem {
 	readonly activation: CanonicalActivation;
 }
+
+registerAction2(class RefreshContextSkillsAction extends Action2 {
+	constructor() {
+		super({
+			id: REFRESH_CONTEXT_SKILLS_COMMAND_ID,
+			title: localize2('repositoryContextRefreshSkills', 'Refresh Skills'),
+			icon: Codicon.refresh,
+			f1: false,
+			menu: {
+				id: MenuId.ViewContainerTitle,
+				group: 'navigation',
+				order: 100,
+				when: ContextKeyExpr.equals(
+					'viewContainer',
+					REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS.skills
+				),
+			},
+		});
+	}
+
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		await accessor.get(IContextSkillService).refresh();
+	}
+});
 
 registerAction2(class ManageGlobalSkillLibraryAction extends Action2 {
 	constructor() {
