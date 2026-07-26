@@ -1172,11 +1172,7 @@ export class CommandCenter {
 			}
 		}
 
-		const config = workspace.getConfiguration('git');
-		const defaultBranchName = config.get<string>('defaultBranchName', 'main');
-		const branchWhitespaceChar = config.get<string>('branchWhitespaceChar', '-');
-
-		await this.git.init(repositoryPath, { defaultBranch: sanitizeBranchName(defaultBranchName, branchWhitespaceChar) });
+		await this.initRepository(repositoryPath);
 
 		let message = l10n.t('Would you like to open the initialized repository?');
 		const open = l10n.t('Open');
@@ -1206,6 +1202,16 @@ export class CommandCenter {
 		} else {
 			await this.model.openRepository(repositoryPath);
 		}
+	}
+
+	@command('_git.initRepository')
+	async initRepository(repositoryPath: string): Promise<string> {
+		const config = workspace.getConfiguration('git');
+		const defaultBranchName = config.get<string>('defaultBranchName', 'main');
+		const branchWhitespaceChar = config.get<string>('branchWhitespaceChar', '-');
+
+		await this.git.init(repositoryPath, { defaultBranch: sanitizeBranchName(defaultBranchName, branchWhitespaceChar) });
+		return repositoryPath;
 	}
 
 	@command('git.openRepository', { repository: false })

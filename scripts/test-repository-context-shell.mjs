@@ -146,6 +146,13 @@ async function main() {
 		assert.equal(await page.getByRole('button', { name: 'Generate Commit Message' }).count(), 0);
 		assert.equal(await page.getByRole('button', { name: /^(Agents|Chat|Accounts|Manage)$/ }).count(), 0);
 
+		await page.getByRole('button', { name: 'Switch Repository' }).click();
+		await page.getByRole('option', { name: /check fixture,/ }).waitFor();
+		assert.equal(await page.getByRole('option', { name: /Open Existing Repository/ }).count(), 1);
+		assert.equal(await page.getByRole('option', { name: /Clone Repository/ }).count(), 1);
+		assert.equal(await page.getByRole('option', { name: /Initialize Repository/ }).count(), 1);
+		await page.keyboard.press('Escape');
+
 		await page.keyboard.press('Meta+N');
 		await page.keyboard.press('Meta+Shift+P');
 		await page.keyboard.press('Control+Backquote');
@@ -170,6 +177,7 @@ async function main() {
 		assert.equal(shellState.quickInputIsVisible, false, JSON.stringify(shellState));
 		assert.equal(shellState.terminalIsVisible, false, JSON.stringify(shellState));
 		assert.equal(shellState.panelIsVisible, false, JSON.stringify(shellState));
+		assert.match(shellState.title, /fixture/);
 		assert.doesNotMatch(shellState.title, /Untitled/);
 		assert.equal(await page.getByRole('dialog').count(), 0);
 		assert.equal(consoleErrors.length, 0, consoleErrors.join('\n'));

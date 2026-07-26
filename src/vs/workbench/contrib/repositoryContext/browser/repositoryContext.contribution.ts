@@ -13,8 +13,13 @@ import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContaine
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { Extensions as ViewExtensions, IViewContainersRegistry, IViewsRegistry, ViewContainerLocation } from '../../../common/views.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
+import { IHostService } from '../../../services/host/browser/host.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { REPOSITORY_CONTEXT_VIEW_CONTAINER_IDS, REPOSITORY_CONTEXT_VIEW_IDS, isRepositoryContextViewContainerAllowed } from '../common/repositoryContext.js';
+import { IRepositoryCatalogService } from '../common/repositoryCatalog.js';
+import './repositoryCatalogActions.js';
+import './repositoryCatalogService.js';
 import { RepositoryContextViewPane } from './repositoryContextView.js';
 
 const configurationRegistry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration);
@@ -22,6 +27,7 @@ configurationRegistry.registerDefaultConfigurations([{
 	overrides: {
 		'window.commandCenter': false,
 		'window.menuBarVisibility': 'hidden',
+		'window.title': '${rootNameShort}',
 		'chat.titleBar.openInAgentsWindow.enabled': false,
 		'onboarding.enabled': false,
 		'security.workspace.trust.enabled': false,
@@ -115,7 +121,16 @@ class RepositoryContextStartupContribution {
 	constructor(
 		@IViewsService viewsService: IViewsService,
 		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
+		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
+		@IHostService hostService: IHostService,
+		@IRepositoryCatalogService _repositoryCatalogService: IRepositoryCatalogService,
 	) {
+		const folders = workspaceContextService.getWorkspace().folders;
+		if (folders.length > 1) {
+			void hostService.openWindow([{ folderUri: folders[0].uri }], { forceReuseWindow: true });
+			return;
+		}
+
 		layoutService.setPartHidden(false, Parts.SIDEBAR_PART);
 		layoutService.setPartHidden(true, Parts.PANEL_PART);
 		layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
