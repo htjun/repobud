@@ -57,7 +57,7 @@ async function npmInstallAsync(dir: string, opts?: child_process.SpawnOptions): 
 		env: { ...process.env },
 		...(opts ?? {}),
 		cwd: path.join(root, dir),
-		shell: true,
+		shell: process.platform === 'win32',
 	};
 
 	const command = process.env['npm_command'] || 'install';
@@ -67,7 +67,7 @@ async function npmInstallAsync(dir: string, opts?: child_process.SpawnOptions): 
 			env: finalOpts.env,
 			cwd: root,
 			stdio: 'inherit',
-			shell: true,
+			shell: process.platform === 'win32',
 		};
 		const userinfo = os.userInfo();
 		log(dir, `Installing dependencies inside container ${process.env['VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME']}...`);
