@@ -59,6 +59,18 @@ npm run gulp compile
 postinstall. The Gulp `compile` target builds and type-checks the client and built-in extensions,
 including `extensions/git`.
 
+Launch the current source without creating a macOS application package:
+
+```bash
+npm run dev
+```
+
+The development command runs the fast client and extension build, prepares the pinned Electron
+runtime and built-in extensions, and launches the RepoBud checkout with isolated state under
+`~/.repobud-dev`. Pass another repository with `npm run dev -- /path/to/repository`. Set
+`REPOBUD_DEV_DATA_DIR` to override the development profile root. Source changes require the command
+to be run again.
+
 Create and verify the focused Apple-silicon application bundle through the product-owned command:
 
 ```bash

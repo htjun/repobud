@@ -20,6 +20,7 @@
     "check-cyclic-dependencies": "node build/lib/checkCyclicDependencies.ts out",
     "preinstall": "node build/npm/preinstall.ts",
     "postinstall": "node build/npm/postinstall.ts",
+    "dev": "node --experimental-strip-types scripts/dev-repobud.mts",
     "preview": "node --experimental-strip-types scripts/preview-repobud.mts",
     "package:macos": "node --experimental-strip-types scripts/package-repobud.mts",
     "verify:macos-package": "node --experimental-strip-types scripts/verify-repobud-package.mts",

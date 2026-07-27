@@ -20,7 +20,24 @@ and common repository operations.
 
 The initial package target is macOS 13 or later on Apple silicon.
 
-## Local Preview
+## Local Development
+
+Use the Node.js version pinned in `.nvmrc`, install dependencies, and launch RepoBud directly from
+source:
+
+```bash
+nvm use
+npm install
+npm run dev
+```
+
+The development command performs a fast source build, prepares the pinned Electron runtime and
+built-in extensions, opens the RepoBud checkout, and keeps its application state in
+`~/.repobud-dev`. Pass another repository with `npm run dev -- /path/to/repository`. Rerun the
+command after source changes. Set `REPOBUD_DEV_DATA_DIR` to use a different development profile
+location.
+
+## Packaged Preview
 
 Use the Node.js version pinned in `.nvmrc`, install dependencies, and package the application:
 
